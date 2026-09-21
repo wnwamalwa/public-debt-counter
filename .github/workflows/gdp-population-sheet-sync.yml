@@ -1,0 +1,91 @@
+name: GDP & population sheet sync
+
+# Runs every Monday 06:00 Nairobi time (03:00 UTC) -- one hour after the
+# separate weekly scheduled task that refreshes the "gdp"/"population" tabs
+# of the IEA Kenya Google Sheet from KNBS (Mondays 05:00 UTC), so this
+# workflow always picks up that week's rebuilt series rather than racing it.
+# Also runnable by hand from the Actions tab ("Run workflow").
+on:
+  schedule:
+    - cron: "0 3 * * 1"
+  workflow_dispatch: {}
+
+concurrency:
+  group: gdp-population-sheet-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      - name: Cache R packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/R
+          key: r-${{ runner.os }}-gdp-pop-${{ hashFiles('df_gdp.R', 'df_pop.R') }}
+          restore-keys: |
+            r-${{ runner.os }}-gdp-pop-
+
+      - name: Install R packages
+        uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          packages: |
+            any::dplyr
+            any::tidyr
+            any::lubridate
+            any::httr
+            any::jsonlite
+            any::googlesheets4
+            any::gargle
+
+      # gsheets.json is never committed to the repo (see .gitignore) -- it's
+      # written fresh from the GSHEET_SERVICE_ACCOUNT secret on every run,
+      # the same pattern quarterly-macro-debt-report's render-pdf.yml uses.
+      # Add this secret with:
+      #   base64 -i gsheets.json | pbcopy   (macOS)
+      # then paste it into Settings -> Secrets and variables -> Actions ->
+      # New repository secret, named GSHEET_SERVICE_ACCOUNT. It's the same
+      # service-account key already shared as Viewer on the sheet
+      # (iea-kenya-ci-reports@iea-pipeline.iam.gserviceaccount.com) -- no
+      # need to create a new one or re-share the sheet.
+      - name: Write Google Sheets service account to file
+        run: echo "${{ secrets.GSHEET_SERVICE_ACCOUNT }}" | base64 --decode > gsheets.json
+
+      - name: Update Supabase (df_gdp.R)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+        run: Rscript df_gdp.R
+
+      - name: Update Supabase (df_pop.R)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+        run: Rscript df_pop.R
+
+      # Belt-and-braces: gsheets.json only ever exists on the runner's disk,
+      # which is destroyed after the job anyway, but there's no reason to
+      # leave a service-account private key sitting around for the rest of
+      # the job if a later step is ever added.
+      - name: Remove service account file
+        if: always()
+        run: rm -f gsheets.json
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### GDP & population sheet sync"
+            echo "- Ran: $(date -u '+%Y-%m-%d %H:%M UTC')"
+            echo "- df_gdp.R and df_pop.R both read the Google Sheet's gdp/population"
+            echo "  tabs and upsert df_gdp/df_pop + df_gdp_metrics/df_pop_metrics."
+            echo "- See the step logs above for each script's pipeline summary."
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,835 @@
+                                   i
+
+
+
+
+AUDITOR-GENERAL’S POPULAR REPORT
+     ON NATIONAL GOVERNMENT
+           2023 - 2024
+
+
+ii
+
+
+iii
+
+
+iv
+
+
+
+
+                      VISION
+        Making a diﬀerence in the lives and
+         livelihoods of the Kenyan people
+
+
+
+
+                    MISSION
+     Audit services that impact on eﬀective and
+             sustainable service delivery
+
+
+
+
+             OUR CORE VALUES
+         Integrity • Credibility • Relevance •
+           Accountability • Independence
+
+
+                                                                                                                                                                                                                               v
+
+
+
+CONTENTS
+Abbreviations.....................................................................................................................................................................................................Vi
+
+Mandate . ........................................................................................................................................................................................................... Vii
+
+Role of the Auditor-General........................................................................................................................................................................viii
+
+OAG Benefits to Society..................................................................................................................................................................................ix
+
+Scope .. ..................................................................................................................................................................................................................x
+
+       1.0           Highlights of Audit Findings....................................................................................................................................................1
+
+       2.0           Summary of Audit FINDINGs. ............................................................................................................................................... 10
+
+                     1.           Unmodified/Unqualified Opinion......................................................................................................................... 11
+
+                     2.           Modified/Qualified Opinion.................................................................................................................................... 11
+
+                     3.           Adverse Opinion ......................................................................................................................................................... 12
+
+                     4.           Disclaimer of Opinion................................................................................................................................................ 12
+
+       4.0           Main Audit Observations Reported Under MDAs......................................................................................................... 14
+
+       5.0           Audit of Donor Funded Projects.......................................................................................................................................... 21
+
+       6.0           Other Observations.................................................................................................................................................................. 22
+
+       7.0           Compliance and Governance Issues ................................................................................................................................. 27
+
+       8.0           The Equalisation Fund ........................................................................................................................................................... 29
+
+       9.0           Recommendations.................................................................................................................................................................... 30
+
+       10.0          How Citizens can use the Audit Report. ........................................................................................................................... 31
+
+
+vi
+
+
+
+     ABBREVIATIONs
+     AIA     — Appropriation in Aid
+
+     CBC     — Competency Based Curriculum
+
+     GoK     — Government of Kenya
+
+     ICU     — Intensive Care Unit
+
+     IFMIS   — Integrated Financial Management Information System
+
+     JSS     — Junior Secondary School
+
+     MDAS — Ministries, Departments and Agencies
+
+     MES     — Managed Equipment Services
+
+     NEMIS — National Education Management and Information System
+
+     NHIF    — National Hospital Insurance Fund
+
+     NSSF    — National Social Security Fund
+
+     OAG     — Office of the Auditor-General
+
+     OMCs    — Oil Marketing Companies
+
+     PAYE    — Pay As You Earn
+
+     PFM     — Public Finance Management
+
+     SRC     — Salaries and Remuneration Commission
+
+     VAT     — Value Added Tax
+
+
+                                                                            vii
+
+
+
+MANDATE
+Article 229 of the Constitution of Kenya, mandates the
+Auditor-General to audit and report on the use of public resources by
+all entities funded from public funds. The Office audits the National and
+County Governments, the Judiciary, Parliament, Statutory Bodies/State
+Corporations, Constitutional Commissions and Independent Offices,
+Public Debt, Political Parties funded from public funds, other government
+agencies and all other entities funded from public funds.
+
+
+viii
+
+
+
+       ROLE OF THE AUDITOR-GENERAL
+       The role and responsibilities of the Auditor-General are to:
+       z   Confirm whether financial statements are in agreement with the
+           books of account.
+       z   Conclude on lawfulness and effectiveness in use of public resources.
+       z   Conclude on effectiveness of internal controls, risk management and
+           governance.
+       z   Promote constitutionalism by ensuring effective use of the public
+           funds for the benefit of citizens.
+
+
+                                                                              ix
+
+
+
+OAG BENEFITS TO SOCIETY
+
+OAG audit reports play a crucial role in ensuring that public resources are
+used effectively and efficiently, ultimately benefiting society through:
+z   Increased accountability and transparency
+z   Improved efficiency and effectiveness
+z   Enhanced public service delivery
+z   Promotion of good governance
+z   Informed decision-making
+z   Strengthening public trust
+z   Follow up on audit recommendations to ensure appropriate actions
+    are taken by Management
+
+                                                Mzee we know you
+                                           pay tax, we check that your
+           What benefits does the          taxes are being used well to
+          OAG bring to a Mzee like      provide services for you and your
+         me who is just a local Boda      family such as maintenance of
+              boda operator                           roads.
+
+
+x
+
+
+
+    SCOPE
+    This audit report is on Ministries, Departments and Agencies for the year
+    ended 30 June, 2024.
+
+
+                                                                                                          1
+
+
+
+1.0 HIGHLIGHTS OF AUDIT
+    FINDINGS
+1.1 Budget Credibility
+Budget credibility is about upholding government commitments and
+understanding why governments deviate from these commitments.
+The credibility of government budgets is a key driver of effective service
+delivery and public trust in government systems. When budgets are
+not implemented as planned, spending priorities can shift, deficits may
+exceed projections, and critical services may be compromised.
+1.2 Budget Trend Analysis
+Estimated Government spending increased over five years from
+Kshs.3.16 Trillion in the year 2019/2020 to Kshs.4.82 Trillion in the year
+2023/2024, representing an increase of Kshs.1.66 Trillion (52%).
+Actual Government spending increased over the same period from
+Kshs.2.91 Trillion in the year 2019/2020 to Kshs.4.23 Trillion in the year
+2023/2024 representing an increase of Kshs.1.32 Trillion (46%).
+
+
+
+
+The estimated gross1 Government spending was Kshs.4.82 Trillion
+(including AIA of Kshs.553.2 Billion) against the actual gross expenditure
+of Kshs.4.23 Trillion. This resulted in gross under-expenditure of
+Kshs.583.9 Billion representing 12% for the financial year 2023/2024.
+1. Gross government spending is the total expenditure that the national government expected to incur in
+   2023/2024 financial year.
+
+
+2
+
+
+    The effect of under-expenditure is that some planned development
+    programmes and services were not delivered to the citizens. This
+    negatively impacted on service delivery to the public and results in
+    pending bills.
+
+
+
+
+            How are we
+         going to learn in
+          a class without
+               a roof
+
+
+
+
+                                           We will come back when we are
+                                           paid for the work already done
+                                            and get more money to finish
+                                                building the classroom
+
+
+
+
+    1.3 Actual Budget for 2023/2024
+    The actual gross government spending was Kshs.3.88 Trillion .
+
+                             Gross Government Spending
+     Consolidated
+     Fund Services                                                   Recurrent
+        1.77T                                                        Spending
+                                                                       1.61T
+
+
+
+
+                                                            Development
+                                                             Spending
+                                                                0.5T
+
+      Consolidated Fund Services     Development Spending            Recurrent Spending
+
+
+                                                                                                                3
+
+
+1.4 Additional Funding and withdrawals under Article 223
+    of the Constitution
+The MDAs spent an additional Kshs.23.7 Billion approved by the
+National Assembly in line with Article 223(4) of the Constitution
+which provides that when the National Assembly has approved
+spending under clause (2), an Appropriation Bill shall be
+introduced for the appropriation of the money spent. However, as
+reported in the previous year, an expenditure of Kshs.10.2 Billion
+(Kshs.4 Billion incurred on maize flour subsidy programme and Kshs.6.2
+Billion on acquisition of Telkom (K) shares) were not approved as required
+by the Constitution.
+There is no guideline in place on how unapproved withdrawals from the
+Consolidated Fund2 under Article 223 should be dealt with. The Public
+Finance Management Act, 2012 should therefore be ammended to
+provide guidelines on the actions to be taken where expediture incurred
+under Article 223 is not approved by the National Assembly.
+
+
+
+
+2. Consolidated Fund is the national government primary repository where all monies raised or received by the
+   national government is deposited to finance its day to day operations.
+
+
+4
+
+
+    1.5 Estimated Receipts Versus Actual Receipts of Ordinary
+        Revenue
+    Estimated Receipts from Ordinary Revenue3 (tax and non-tax receipts)
+    increased from Kshs.1.67Trillion in 2019/2020 to Kshs.2.46 Trillion in
+    2023/2024, an increase of Kshs.0.79 Trillion (48%).
+    Actual Receipts increased from Kshs.1.62 Trillion in 2019/2020 to
+    Kshs.2.29 Trillion in 2023/2024, an increase of Kshs.0.66 Trillion (42%) as
+    shown below:
+                       Budgeted Ordinary              Actual Ordinary
+                                 Revenue                     Revenue                     Revenue
+                         (Tax and Non-Tax            (Tax and Non-Tax                    Surplus/ Percentage of
+                                 Receipts)                   Receipts)                 (Shortfall)     Surplus/
+    Year                           (Kshs.)                     (Kshs.)                     (Kshs.)   (Shortfall)
+    2019/2020           1,669,701,355,816          1,618,797,777,894 (50,903,577,922)                             (3%)
+    2020/2021           1,601,597,982,154          1,601,016,386,868     (581,595,286)                         (0.04%)
+    2021/2022           1,891,602,330,060          1,940,971,132,408 101,497,970,074                              5.5%
+    2022/2023           2,158,627,298,438          2,059,281,671,520 (99,345,626,918)                           (4.6%)
+    2023/2024           2,464,287,804,187          2,293,893,380,062 (170,394,424,125)                          (6.9%)
+
+
+
+
+    3. Ordinary Revenue refers to national government income from taxes, levies, royalties, fees, duties, rent and
+       surplus funds from Semi Autonomous Government Agencies (SAGAs).
+
+
+                                                                               5
+
+
+1.6 Actual Spending against Actual Revenue
+The actual gross spending in 2023/2024 financial year was Kshs.3.88 Trillion
+against the actual revenue (tax and non-tax receipts) of Kshs.2.29Trillion,
+resulting in a deficit of Kshs.1.59 Trillion. This lead to borrowing from
+domestic and foreign markets to fund the deficit.
+
+
+6
+
+
+    1.7 Late Release of Funds from the Exchequer
+    Service delivery to the citizens was affected following late release of Kshs.49.5
+    Billion from The National Treasury. This was contrary to Regulation 97(4)
+    of the Public Finance Management (National Government) Regulations,
+    2015, which provides that actual cash transactions taking place after 30
+    June shall not be treated as pertaining to the previous Financial Year.
+
+
+
+
+                       Sorry we have run
+                      out of medicine and
+                      we have not received
+                        funding from the
+                            Ministry
+
+
+
+
+                              What! no
+                            balance in my
+                              account?                            I can’t afford
+                                                                   to buy these
+                                                                       drugs
+
+
+                                                                               7
+
+
+1.8 Management of Public Debt
+The public debt as at 30 June, 2024 was Kshs.10.58 Trillion. This represents
+an increase of Kshs.4.21 Trillion or approximately 66% over a five year
+period as indicated:
+
+
+
+
+The outstanding amount of public debt of Kshs.10.58 Trillion exceeded
+the maximum debt ceiling of Kshs.10 Trillion approved by Parliament
+through Legal Notice No.89 of 26 May, 2022 which provides that the
+National Public Debt shall not exceed ten trillion shillings.
+Key Issues
+z   The Kshs. 10.58 Trillion Public Debt include an outstanding Central
+    Bank of Kenya overdraft of Kshs.61 Billion as at 30 June 2024. However,
+    the balance does not include loans and overdrafts held by the National
+    and County Governments entities and Pending Bills.
+z   The Government paid commitment fees of Kshs.1.5 Billion relating to
+    undrawn loans signed between the Government of Kenya and foreign
+    lenders. Among the projects the Government paid commitment fees
+    included; Kenol-Sagana-Marua Road Project, Bagamoyo-Horohoro
+    Phase1 Project and Mombasa-Mariakani Highway (Lot 1). Had the
+    implementing agencies put in place proper mechanisms to enable
+    absorption of the committed credit within the agreed timeframes,
+    the payment of commitment fees would have been minimised and
+    funds put to good use.
+
+
+8
+
+
+
+
+    1.9 Loans to State Owned Enterprises
+    The total loan to fifty four (54) State Owned Enterprises was
+    Kshs.1.19 Trillion. Four (4) institutions with outstanding balance of
+    Kshs.13.12 Billion did not confirm their loan balances because they
+    requested for write-off, transferred their functions to respective county
+    governments or were under receivership.
+
+    1.10 Outstanding Payments (Pending Bills)
+    Pending bills are unsettled financial obligations that occur at the end of
+    the Financial Year as a result of failure to pay for goods and services that
+    have been procured and delivered. This also includes unpaid obligations
+    such as pensions, other payroll deductions and outstanding verified
+    overpaid tax owed to tax payers.
+    Total outstanding payments to contractors and suppliers was
+    Kshs.194.7 Billion, made up of Kshs.130.3 Billion and Kshs.64.4 Billion for
+    MDAs and Donor Funded Projects, respectively.
+
+
+                                                                            9
+
+
+Outstanding payments for the MDAs decreased by Kshs.48.7 Million
+(0.4%) from Kshs.130.8 Billion in 2022/2023 financial year to Kshs.130.3
+Billion in 2023/2024 financial year.
+The Ministry of Defence had the highest outstanding payments of
+Kshs.22.9 Billion, representing 17.6% of the Kshs.130.3 Billion owed by
+MDAs.
+The Kenya National Highways Authority had the highest outstanding
+payments of Kshs.49.99Billion for its Donor-Funded Projects, representing
+78% of the Kshs.64.4 Billion, owed by Donor Funded Projects.
+Impact of outstanding payments to contractors are as follows;
+z Expensive goods and services supplied
+z Closure of business and losses especially small and micro enterprises
+z Affected liquidity or money supply in the private sector
+z Delayed payment of taxes by suppliers and staff salaries for funds not
+   received
+z Continued accumulation of pending payments
+      Please pay us                         We will release
+      for the goods                           more funds
+      and services                            in the next
+       we supplied                          financial year
+
+
+10
+
+
+
+     2.0 SUMMARY OF AUDIT
+         FINDINGS
+
+                                              2021/2022         2022/2023       2023/2024
+     No.   Description                     Kshs (Billions)   Kshs (Billions) Kshs (Billions)
+      1    Estimated Expenditure                     3,832             4,069           4,817
+      2    Actual Expenditure                        3,473             3,614           4,233
+      3    Estimated Revenue Receipts                1,892             2,159           2,464
+      4    Actual Revenue Receipts                   1,941             2,059           2,293
+      5    Outstanding Total Public Debt             8,479           10,265          10,581
+      6    Public Debt Expenditure                   1,041             1,201           1,598
+           Outstanding Payments
+     7                                                106              197              194
+           (Pending Bills)
+
+
+                                                                              11
+
+
+
+3.0        SUMMARY OF AUDIT OPINIONS
+The Auditor-General expressed different types of opinions based on the
+following criteria:
+
+1. Unmodified/Unqualified Opinion
+A total of two hundred and fourty eight (248) financial statements had
+Unmodified Opinions.
+
+
+
+
+2. Modified/Qualified Opinion
+There was a total of eighty five (85) financial statements that were issued
+with Qualified Opinions.
+
+
+12
+
+
+     3. Adverse Opinion
+     Two (2) financial statements had an Adverse Opinion.
+
+
+
+
+     4. Disclaimer of Opinion
+     One (1) financial statement had a Disclaimer of Opinion.
+
+
+                                                                          13
+
+
+Summary of Opinion
+Client       Type of Opinion Issued
+Type
+             Unmodified        Qualified   Adverse   Disclaimer   Total
+MDAs         56                       27         –           –      83
+Revenue      8                         4         –           –      12
+statements
+Donor        169                      43         1           –     213
+Funded
+Projects
+Others       15                       11         1           1      28
+Total        248                      85         2           1     336
+
+
+14
+
+
+
+     4.0 MAIN AUDIT OBSERVATIONS
+         REPORTED UNDER MDAs
+     4.1 The National Treasury
+     Government Digital Payments (E-Citizen)
+     The National Government collected Kshs.100.8 Billion (44.8 Billion in
+     respect of receivers of revenue) through the e-Citizen Government
+     Digital Payments Platform. Review of the e-Citizen Platform and the
+     revenue statements revealed variances between balances reflected in
+     the revenue statements, e-Portal system and the ledger, casting doubt
+     on the completeness and accuracy of receipts reported by the receivers
+     of revenue amounting to Kshs. 44.8 Billion.
+
+
+                                                                         15
+
+
+The Government did not have full control of the system and was relying
+significantly on the supplier for some critical functions to perform
+onboarding, system configuration and changes to support system growth
+including new Government services.
+
+
+16
+
+
+     Loans to Kenya Airways Limited
+     The Kenya Airways owed The National Treasury Kshs.55.3 Billion as at
+     30 June, 2023 made up of Kshs.43 Billion and Kshs.12.3 Billion loan and
+     Guaranteed Debt, respectively. There was no formal agreement between
+     The National Treasury and Kenya Airways on how the guaranteed loans
+     repayments would be recovered and the Airline had not provided any
+     security to the Government as a fall back.
+
+
+                                                                            17
+
+
+Pensions due to Civil Servants and Military Officers
+The National Government set aside Kshs.187 Billion in respect of Civil
+Servants and Military Officers’ pensions. However, the dues could not be
+accessed by some pensioners due to missing personal details like their ID
+and employee numbers.
+
+
+18
+
+
+     4.2 State Department for Foreign Affairs
+     The State Department disbursed Kshs. 14.3 Billion to missions abroad, on
+     quaterly basis. However, no disbursement were done in the last months
+     of the respective quaters. This resulted in delayed payments to local staff,
+     foreign service allowances to the home-based staff, suppliers and other
+     related expenses. This affected staff morale and exposed the country to
+     reputational risks.
+
+
+                                                                              19
+
+
+4.3 State Department for Petroleum – Unsupported
+    Stabilization of Petroleum Pump Prices Payments
+The State Department paid Kshs.47.2 Billion to Oil Marketing Companies
+(OMCs) as compensation for lower prices charged at the pump against
+actual set prices, as per stabilization of petroleum pump prices mechanism.
+However, it was not possible to confirm the sustainability of the subsidy
+programme since the Department had not established a Multi-Agency
+Team to review the total resource requirements and develop Governance
+Framework for stabilisation of fuel prices and compensation mechanism.
+
+
+20
+
+
+     4.4 The State Department for Medical Services
+     Underfunding of Maternity Programme
+     The State Department had a budgeted expenditure of Kshs.105.5 Billion
+     out of which Kshs.4 Billion related to implementation of free maternity
+     programme (Linda Mama programme). However, only Kshs.2 Billion was
+     transferred to the National Health Insurance Fund for the implementation
+     of the programme resulting in an underfunding of Kshs.2 Billion or 51%
+     of the budget. This means a good number of women were affected
+     during delivery. The Linda Mama programme is now currently one of the
+     benefits under the Primary Health Care Fund (PHCF) under the Social
+     Health Authority (SHA) and will be funded by the Exchequer through the
+     Ministry of Health.
+     Stock Outs of Vaccines at the Central Vaccine Store
+     Review of the vaccine stock ledgers revealed that during the year, three
+     antigens (BCG, OPV and Measles Rubella) were out of stock for an average
+     of sixty-five (65) days due to delays in providing funding to the procuring
+     agent. The stock outs at the Central Vaccine Store (CVS) affected the
+     availability of vaccines at the health facilities which significantly affected
+     the provision of preventive healthcare.
+
+
+                                                                                 21
+
+
+
+5.0 AUDIT OF DONOR FUNDED
+    PROJECTS
+There was low absorption of funds in forty-four (44) projects. Although
+the projects periods were ending, some funds had not been absorbed,
+posing risks that the projects would end without implementing all the
+planned activities and therefore not meeting all the projects’ objectives
+of transforming lives of the citizens. A total of Kshs.4.4 Billion was paid as
+interest on delayed payments, an amount that could have been used in
+other important live-changing projects and programmes.
+
+
+22
+
+
+
+     6.0 OTHER OBSERVATIONS
+
+     6.1 Inadequacies in the Integrated Financial Management
+         Information System
+     The Government of Kenya (GoK) introduced the Integrated Financial
+     Management Information System (IFMIS) to improve how finances
+     are controlled, recorded, accounted for and reported. The system was
+     designed to provide accurate, reliable and timely financial information.
+     The benefits are yet to be realised due to inadequencies of the system.
+
+
+                                           Why are the balances in your
+                                           financial statements varying
+                                              from the ones in IFMIS?
+
+
+                                                                            23
+
+
+Other issues relating to IFMIS include:
+z   Balances reflected in the financial statements submitted for audit
+    were at variance with balances in the Trial balance/Ledgers extracted
+    from IFMIS.
+z   Balances reflected in the financial statements /ledgers were at
+    variance with balances in the IFMIS supporting schedules.
+z   The reported balances for recurrent, development and deposit bank
+    balances as well as cash in hand balances were at variance with the
+    IFMIS amounts.
+z   Some payments were made in IFMIS but could not be traced to the
+    financial statements, whereas some payments in the financial records
+    were not posted in IFMIS.
+z   There were instances where accounting for Authority to Incur
+    Expenditure (AIEs) issued to National Government officers in County
+    offices were not processed in IFMIS but were instead done manually,
+    since the offices were not linked to IFMIS.
+z   Review of the transactions in IFMIS revealed cases where numerous
+    transactions were cancelled (voided) in the system but no evidence
+    was provided to confirm that the cancellation was approved.
+z   Override of internal controls was noted where an account was created
+    in IFMIS under an individual’s name which occasioned loss of funds,
+    an indication that the internal controls in IFMIS were not effective.
+
+
+24
+
+
+     6.2 Unsupported Expenditure
+     The audit revealed unsupported expenditure of Kshs.0.7Billion and
+     Kshs.1.3 Billion under five (5) MDAs and eleven (11) Donor Funded Projects
+     respectively both totalling Kshs.2 Billion.
+     Failure to support the payments showed lack of authenticity, internal
+     controls and accountability.
+
+
+                                                                           25
+
+
+6.3 Stalled/Delayed Projects
+The Government continued to incur huge expenditure on twenty four (24)
+projects which had either stalled or delayed long after their completion
+dates had elapsed. As a result, there was no value for money on public
+funds spent on these projects as not services were being provided.
+
+
+26
+
+
+     6.4 Land Without Ownership Documents
+     Twenty-six (26) MDAs lacked ownership documents for parcels of land in
+     their possession. In the absence of title documents, it was not possible to
+     ascertain that all properties and improvements belong to the respective
+     MDAs.
+
+
+                                                                            27
+
+
+
+7.0 COMPLIANCE AND
+    GOVERNANCE ISSUES
+Forty-seven thousand two hundred and seventy-four (47,274)Government
+employees did not comply with the one-third (1/3) of basic salary rule
+as required by Section19(3) of the Employment Act, 2007. The Section
+provides that all deductions made by an employer from the wages or
+salaries of his/her employees at any one time shall not exceed two-thirds
+(2/3), of basic salary.
+
+
+28
+
+
+     Other compliance and governance issues revealed by the compliance
+     audits includeds:
+     z Payment of allowances not approved by Salaries and Remuneration
+         Commission;
+     z Incomplete Fixed Asset Registers;
+     z Failure to collect Government revenue and un-budgeted expenditure;
+     z Payment of salaries outside Integrated Personnel and Payroll Database
+         (IPPD);
+     z Unapproved positions in staff establishments;
+     z Non-compliance with Public Procurement and Asset Disposal Act,
+         2015 and regulations, 2020;
+     z Failure to surrender unspent balances, non-remittance of statutory
+         deductions including PAYE, VAT, NHIF, NSSF and Pensions;
+     z Irregular issuance of multiple imprests;
+     z In-effective Internal Audit Function and Audit Committees;
+     z Value for money issues such as delay in project completion.
+
+
+                                                                                                      29
+
+
+
+8.0 THE EQUALISATION FUND
+The National Treasury failed to release Kshs.46.5 Billion to the Equalisation
+Fund allocated to the 14 marginalized counties. Only Kshs.13.4 Billion out
+of the expected total entitlement of Kshs.59.9 Billion was transferred to
+the Fund. The Fund was established by Article 204 of the Constitution of
+Kenya to help marginalized areas get essential services like water, roads,
+health facilities, and electricity among others, to raise them to the same
+standard as the rest of the country.
+
+
+
+
+            KEY
+
+                  Marginalised counties
+
+
+
+
+        Fourteen (14) counties (Turkana, Mandera, Wajir, Marsabit, Samburu, West Pokot, Tana River,
+                         Narok, Kwale, Garissa, Kilifi, Taita Taveta, Isiolo, and Lamu)
+                  were identified as marginalized, and were the initial beneficiaries of the fund.
+
+
+30
+
+
+
+     9.0 RECOMMENDATIONS
+
+     z   The National Treasury should take into consideration all macro-
+         economic assumptions during budget preparation to ensure that
+         accurate budgets are presented to Parliament. Any expenditure that
+         was known at the time the original budget was finalized should not
+         be considered unforeseen.
+     z   Accounting Officers should strive to execute their budgets according
+         to the plan approved by the legislature at aggregate and detailed
+         allocations.
+     z   Accounting Officers should take appropriate measures to resolve
+         issues arising from audits and ensure implementation of the
+         recommendations of Parliament on the report of the Auditor-General.
+     z   Accounting officers should put in place proper mechanisms to enable
+         absorption of the committed funds within the agreed timeframes to
+         promote fiscal discipline in the use of public resources.
+     z   Sanctions should be introduced against Accounting Officers who fail
+         to pay suppliers or contractors within the stipulated timelines. The
+         National Treasury to ensure adequate funding is provided towards
+         implementation of government projects and programmes.
+     z   Sanctions on Accounting Officers who fail to provide documents in
+         accordance with Section 62 (b) and (c) of the Public Audit Act, 2015.
+     z   The National Treasury should update, finalize and approve all Public
+         Debt policies and procedures manuals regularly and ensure efficiency
+         in retrieval of debt management information, by putting in place a
+         robust and secure filing system that provides quick access to debt
+         information. Further, the directorates should have sufficient and
+         adequately trained debt management staff with clearly defined roles
+         and put in place adequate measures and tools to operationalize and
+         monitor the implementation of the debt Medium-Term strategies.
+     z   Amendment of PFM Act 2012 to provide guidelines on the actions to
+         be taken where expediture incurred under Article 223 is not approved
+         by the National Assembly.
+
+
+                                                                                         31
+
+
+
+10.0 HOW CITIZENS CAN USE THE
+     AUDIT REPORT
+This report will enhance citizens’ capacity in the Citizen Accountability
+Audit. It will also encourage greater citizen participation in public finance
+management, including planning and budgeting. It will lead to increased
+ownership of Social Accountability Audit initiatives.
+Further, this report will increase the visibility of the OAG to citizens leading
+to increased uptake and follow-up on the findings of audit reports.
+The citizens will have access to a seamless flow of information from OAG
+thereby contributing to the effectiveness of participatory audits, and the
+ability of OAG to report on the efficiency and effectiveness of the use of
+public resources.
+
+
+                        We are keeping an   Audit reports help us
+                        eye on how public   hold the government         Reporting
+                         funds are used.        accountable.        misappropriation
+ We want to ensure
+  priority projects                                                 is our civic duty.
+ benefit mama boga
+         first.
+
+
+32
+
+
+33
+
+
+34
+

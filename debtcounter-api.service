@@ -1,0 +1,49 @@
+# ============================================================
+# KENYA NATIONAL DEBT COUNTER
+# PRODUCTION SERVICE CONFIGURATION
+# ============================================================
+#
+# Service Manager:
+# systemd
+#
+# Responsibilities:
+# - Start API on boot
+# - Auto restart on failure
+# - Manage environment variables
+# - Provide centralized logging
+#
+# ============================================================
+
+[Unit]
+Description=Kenya Debt Counter Plumber API
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/debtcounter/backend
+
+# === ENVIRONMENT VARIABLES ===
+# Edit these with your actual credentials
+Environment="PORT=8000"
+Environment="SUPABASE_URL=https://kbzdqczhgtbecpwgssqy.supabase.co"
+Environment="SUPABASE_API=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtiemRxY3poZ3RiZWNwd2dzc3F5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ1MTgxMDMsImV4cCI6MjA5MDA5NDEwM30.OGj_06kvnuvplrpITFUGple3feG9nFU41JwHpvx3lME"
+Environment="ANTHROPIC_API_KEY=REPLACE_WITH_YOUR_ANTHROPIC_KEY"
+
+ExecStart=/usr/bin/Rscript /opt/debtcounter/backend/api.R
+
+# Restart policy
+Restart=always
+RestartSec=10
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+# Output logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=debtcounter-api
+
+[Install]
+WantedBy=multi-user.target

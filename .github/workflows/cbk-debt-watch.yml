@@ -1,0 +1,81 @@
+name: CBK public debt watch
+
+# Every Friday 16:00 Nairobi time (13:00 UTC). Also runnable by hand from the
+# Actions tab ("Run workflow"), with an option to force a Supabase update.
+on:
+  schedule:
+    - cron: "0 13 * * 5"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Run df_debt.R even if the CBK file hasn't changed"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write   # to commit watch/public_debt.state after a successful update
+
+concurrency:
+  group: cbk-debt-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check CBK for a new Public Debt file
+        id: check
+        run: watch/check_cbk.sh public_debt 'Public%20Debt\.csv'
+
+      - name: Set up R
+        if: steps.check.outputs.changed == 'true' || inputs.force
+        uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      - name: Install R packages
+        if: steps.check.outputs.changed == 'true' || inputs.force
+        uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          packages: |
+            any::dplyr
+            any::tidyr
+            any::purrr
+            any::lubridate
+            any::zoo
+            any::forecast
+            any::readr
+            any::httr
+            any::jsonlite
+
+      - name: Update Supabase (df_debt.R)
+        if: steps.check.outputs.changed == 'true' || inputs.force
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+        run: Rscript df_debt.R
+
+      # Only remember the new file once Supabase was updated successfully, so a
+      # failed run is retried next week (and GitHub emails you about the failure).
+      - name: Record new file version
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          mv watch/public_debt.state.new watch/public_debt.state
+          git config user.name  "cbk-watch-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add watch/public_debt.state
+          git commit -m "CBK Public Debt updated: ${{ steps.check.outputs.latest }}"
+          git push
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### CBK public debt watch"
+            echo "- File: ${{ steps.check.outputs.url }}"
+            echo "- Changed: ${{ steps.check.outputs.changed }}"
+            echo "- Latest year,month: ${{ steps.check.outputs.latest }}"
+          } >> "$GITHUB_STEP_SUMMARY"

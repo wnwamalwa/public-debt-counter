@@ -1,0 +1,12 @@
+# Credentials: never commit
+.Renviron
+.Renviron.*
+*.env
+secrets/
+gsheets.json
+.secrets/
+
+# R session files
+.Rhistory
+.RData
+.Rproj.user/
