@@ -56,7 +56,7 @@ suppressPackageStartupMessages({
 # SETTINGS
 # ------------------------------------------------------------
 
-DRY_RUN <- TRUE   # first run: TRUE (print only). Flip to FALSE once the dry-run output looks right.
+DRY_RUN <- FALSE   # first run: TRUE (print only). Flip to FALSE once the dry-run output looks right.
 
 SHEET_URL  <- "https://docs.google.com/spreadsheets/d/11Y_EoYqFJOTTubbBCQkh1gV3kbX1cVQHapdzbwWUXK4"
 SHEET_TAB  <- "population"
