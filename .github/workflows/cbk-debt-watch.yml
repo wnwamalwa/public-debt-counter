@@ -1,10 +1,10 @@
 name: CBK public debt watch
 
-# Every Friday 16:00 Nairobi time (13:00 UTC). Also runnable by hand from the
+# Every Friday 16:07 Nairobi time (13:07 UTC) -- off the hour so GitHub starts it on time. Also runnable by hand from the
 # Actions tab ("Run workflow"), with an option to force a Supabase update.
 on:
   schedule:
-    - cron: "0 13 * * 5"
+    - cron: "7 13 * * 5"
   workflow_dispatch:
     inputs:
       force:

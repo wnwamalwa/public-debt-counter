@@ -1,13 +1,17 @@
 name: GDP & population sheet sync
 
-# Runs every Monday 06:00 Nairobi time (03:00 UTC) -- one hour after the
+# Runs every Monday 08:07 Nairobi time (05:07 UTC) -- about an hour after the
 # separate weekly scheduled task that refreshes the "gdp"/"population" tabs
-# of the IEA Kenya Google Sheet from KNBS (Mondays 05:00 UTC), so this
-# workflow always picks up that week's rebuilt series rather than racing it.
+# of the IEA Kenya Google Sheet from KNBS (Mondays 07:03 Nairobi / 04:03 UTC),
+# so this workflow always picks up that week's rebuilt series rather than
+# racing it. Off the hour on purpose: GitHub delays :00 jobs, and each
+# scheduled job gets its own 5-minute slot so none hit Supabase together.
+# Slot plan (Nairobi): Mon 07:03 sheet refresh | 08:07 GDP & population |
+# 08:12 forex | 08:17 WACD | 08:22 finance | Fri 16:07 CBK debt watch.
 # Also runnable by hand from the Actions tab ("Run workflow").
 on:
   schedule:
-    - cron: "0 3 * * 1"
+    - cron: "7 5 * * 1"
   workflow_dispatch: {}
 
 concurrency:
