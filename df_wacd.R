@@ -5,7 +5,8 @@
 # 1. Finds CBK's "Revenue and Expenditure" CSV on the Government Finance
 #    Statistics page (the link changes with every upload)
 # 2. Takes monthly domestic and foreign interest paid (KSh million,
-#    cumulative within each fiscal year), fills gaps, forecasts to the next
+#    cumulative within each fiscal year; quarterly from September 1999 to
+#    June 2000, then monthly), fills gaps, forecasts to the next
 #    June and smooths so each fiscal year ends on its June total, then
 #    forecasts one month past the current month (auto.arima) -- the same
 #    method as before
@@ -82,7 +83,17 @@ smooth_var <- function(df, var) {
 
   first_june <- as.Date(paste0(year(min(df_final$date)) + ifelse(month(min(df_final$date)) >= 6, 1, 0), "-06-01"))
 
-  df_final %>%
+  # Before the first June there is no previous full year to build on (CBK's
+  # file starts in September 1999, quarterly until June 2000). Those months
+  # take the fiscal year to date, filled in a straight line between the
+  # quarterly figures, scaled up to a full year (x 12 / months into the year).
+  pre <- df_interp %>%
+    filter(date < first_june) %>%
+    mutate(months_in = ((month(date) - 7) %% 12) + 1,
+           final = val * 12 / months_in) %>%
+    select(date, !!paste0(var, "_smooth") := final)
+
+  main <- df_final %>%
     filter(date >= first_june) %>%
     group_by(fy) %>%
     mutate(inc = val - lag(val),
@@ -93,12 +104,18 @@ smooth_var <- function(df, var) {
     ungroup() %>%
     mutate(final = if_else(is.na(final), val, final)) %>%
     select(date, !!paste0(var, "_smooth") := final)
+
+  bind_rows(pre, main) %>% arrange(date)
 }
 
 df_smooth <- smooth_var(df_raw, "int_dom") %>%
   left_join(smooth_var(df_raw, "int_ext"), by = "date") %>%
-  # Months after the latest CBK figure come from the forecast-to-June step.
-  mutate(source = if_else(date > latest_actual, "forecast", "actual"))
+  # Months after the latest CBK figure come from the forecast-to-June step;
+  # months CBK did not publish (quarterly until June 2000) are filled in a
+  # straight line, the same labels as the debt series.
+  mutate(source = case_when(date > latest_actual ~ "forecast",
+                            date %in% df_raw$date[!is.na(df_raw$int_dom)] ~ "actual",
+                            TRUE ~ "interpolated"))
 
 # --- Forecast each series one month past the current month ---
 current_month <- floor_date(Sys.Date(), "month")
