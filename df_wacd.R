@@ -97,7 +97,8 @@ smooth_var <- function(df, var) {
 
 df_smooth <- smooth_var(df_raw, "int_dom") %>%
   left_join(smooth_var(df_raw, "int_ext"), by = "date") %>%
-  mutate(source = "actual")
+  # Months after the latest CBK figure come from the forecast-to-June step.
+  mutate(source = if_else(date > latest_actual, "forecast", "actual"))
 
 # --- Forecast each series one month past the current month ---
 current_month <- floor_date(Sys.Date(), "month")
