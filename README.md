@@ -11,7 +11,17 @@ Supabase tables (and, through them, `api.kenyadebtcounter.or.ke` and
 | `df_debt.R` | CBK public debt CSV | `df_debt_historical`, `df_debt_current`, `df_debt_growth_per_sec` | `.github/workflows/cbk-debt-watch.yml` |
 | `df_gdp.R` | Google Sheet `gdp` tab | `df_gdp`, `df_gdp_metrics` | `.github/workflows/gdp-population-sheet-sync.yml` |
 | `df_pop.R` | Google Sheet `population` tab | `df_pop`, `df_pop_metrics` | `.github/workflows/gdp-population-sheet-sync.yml` |
-| `df_finance.R`, `df_forex.R`, `df_wacd.R`, `gdp_g.R` | various | corresponding tables | not yet scheduled |
+| `df_forex.R` | CBK monthly exchange rate (end period) CSV | `df_forex` | `.github/workflows/cbk-indicators.yml` |
+| `df_wacd.R` | CBK revenue & expenditure CSV (interest columns) | `df_wacd`, `df_wacd_metrics` | `.github/workflows/cbk-indicators.yml` |
+| `df_finance.R` | CBK revenue & expenditure CSV | `df_finance`, `df_finance_metrics` | `.github/workflows/cbk-indicators.yml` |
+| `gdp_g.R` | various | corresponding tables | not scheduled |
+
+`df_forex.R`, `df_wacd.R` and `df_finance.R` share `pipeline_helpers.R`: they
+find the current CBK file link on the page each run (CBK renames files on every
+upload), back a table up before replacing it and restore it if the upload
+fails, and post their key results as annotations on the GitHub Actions run.
+Run any of them with `DRY_RUN=true` to calculate without writing; manual runs
+of the workflow are dry runs unless you untick the box.
 
 `df_gdp.R`/`df_pop.R` read the same IEA Kenya Google Sheet
 (`quarterly_macro_debt_report_ieakenya`) that the `quarterly-macro-debt-report`

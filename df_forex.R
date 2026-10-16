@@ -1,101 +1,92 @@
-library(tidyverse)
-library(lubridate)
-library(imputeTS)
-library(forecast)
-library(rvest)
+# ============================================================
+# KENYA NATIONAL DEBT COUNTER — EXCHANGE RATE PIPELINE (df_forex.R)
+# ============================================================
+#
+# 1. Finds CBK's "Monthly exchange rate (end period)" CSV on the Exchange
+#    Rates statistics page (the link changes with every upload)
+# 2. Takes the KSh per US dollar series, fills any missing months
+#    (linear interpolation), and forecasts (auto.arima) up to this month
+# 3. Adds today's CBK indicative rate from the CBK home page when it can be
+#    read (optional: skipped with a warning if the page layout changes)
+# 4. Replaces df_forex in Supabase (date, value, source = Actual/Forecast)
+#
+# Run: Rscript df_forex.R            (DRY_RUN=true Rscript df_forex.R to only print)
+# Scheduled: .github/workflows/cbk-indicators.yml, Mondays 08:12 Nairobi.
+# ============================================================
 
-# Load credentials
-readRenviron(".Renviron")
+suppressPackageStartupMessages({
+  library(dplyr)
+  library(lubridate)
+  library(forecast)
+  library(rvest)
+})
+source("pipeline_helpers.R")
 
-supabase_url <- Sys.getenv("SUPABASE_URL")
-supabase_api <- Sys.getenv("SUPABASE_API")
+url <- find_cbk_link(CBK_FX_PAGE, "Monthly exchange rate \\(end period\\)\\.csv$")
+notice("Exchange rate file: ", URLdecode(url))
+raw <- read.csv(download_cbk(url), skip = 1, check.names = TRUE, stringsAsFactors = FALSE)
 
-fetch_supabase_data <- function(table_name) {
-  url <- paste0(supabase_url, "/rest/v1/", table_name, "?select=*")
-    response <- GET(url = url,
-    add_headers(apikey = supabase_api,
-      Authorization = paste("Bearer", supabase_api),
-      `Content-Type` = "application/json" ))
-  data <- fromJSON(content(response, as = "text", encoding = "UTF-8"), flatten = TRUE)
-  return(data)}
+usd_col <- grep("United.States", names(raw), value = TRUE)[1]
+if (is.na(usd_col) || !all(c("Year", "Month") %in% names(raw))) {
+  fail("Exchange rate file layout changed: expected Year, Month and a 'United States dollar' column; got ",
+       paste(head(names(raw), 6), collapse = ", "))
+}
 
+df_raw <- raw %>%
+  transmute(year = suppressWarnings(as.integer(Year)),
+            month = suppressWarnings(as.integer(Month)),
+            value = suppressWarnings(as.numeric(gsub(",", "", .data[[usd_col]])))) %>%
+  filter(!is.na(year), !is.na(month), month %in% 1:12, !is.na(value)) %>%
+  mutate(date = make_date(year, month, 1)) %>%
+  distinct(date, .keep_all = TRUE) %>%
+  arrange(date)
 
-url <- 'https://www.centralbank.go.ke/uploads/exchange_rates/560562670_Monthly%20exchange%20rate%20(end%20period).csv'
-
-# Load & clean
-df_raw <- read.csv(url, skip = 1) %>%
-  select(year = Year, month = Month, value = contains("United.States")) %>%
-  drop_na() %>%
-  mutate(date = as.Date(paste(year, month, "01", sep = "-")))
+if (nrow(df_raw) < 24) fail("Only ", nrow(df_raw), " usable exchange rate rows; refusing to update.")
+if (any(df_raw$value < 20 | df_raw$value > 500)) fail("Implausible KSh/USD values in the CBK file; refusing to update.")
+latest_actual <- max(df_raw$date)
+check_fresh("Exchange rate", latest_actual)
 
 # Fill missing months
-all_dates <- seq(min(df_raw$date), max(df_raw$date), by = "month")
-df_full <- data.frame(date = all_dates)
+df_actual <- data.frame(date = seq(min(df_raw$date), latest_actual, by = "month")) %>%
+  left_join(df_raw %>% select(date, value), by = "date") %>%
+  mutate(value = interp_linear(value), source = "Actual")
 
-df_actual <- df_full %>%
-  left_join(df_raw, by = "date") %>%
-  arrange(date) %>%
-  mutate(value_filled = na_interpolation(value, option = "linear"),
-         source = "Actual")
-
-# Time series
-ts_forex <- ts(df_actual$value_filled,
-               start = c(year(min(df_actual$date)), month(min(df_actual$date))),
-               frequency = 12)
-
-# Fit ARIMA
-model_arima <- auto.arima(ts_forex)
-
-# Forecast to cover gap up to current month
-last_data_month <- floor_date(max(df_actual$date), "month")
-current_month   <- floor_date(Sys.Date(), "month")
-months_gap      <- interval(last_data_month, current_month) %/% months(1)
-
+# Forecast the gap up to the current month
+current_month <- floor_date(Sys.Date(), "month")
+months_gap <- interval(latest_actual, current_month) %/% period(1, "month")
+df_forex <- df_actual
 if (months_gap > 0) {
-  forecast_vals <- forecast(model_arima, h = months_gap)$mean
-  df_forecast <- data.frame(
-    date = seq(last_data_month %m+% months(1), current_month, by = "month"),
-    value_filled = as.numeric(forecast_vals),
+  ts_fx <- ts(df_actual$value, start = c(year(min(df_actual$date)), month(min(df_actual$date))), frequency = 12)
+  fc <- forecast(auto.arima(ts_fx), h = months_gap)$mean
+  df_forex <- bind_rows(df_forex, data.frame(
+    date = seq(latest_actual %m+% months(1), current_month, by = "month"),
+    value = as.numeric(fc),
     source = "Forecast"
-  )
-  df_forex <- bind_rows(df_actual, df_forecast)
-} else {
-  df_forex <- df_actual
+  ))
 }
-df_forex <- df_forex %>% select(date,value = value_filled,source)
-# Scrape today's latest CBK rate
-df_today <- read_html("https://www.centralbank.go.ke/") %>%
-  html_table() %>% .[[10]] %>% select(3)
 
-df_today <- data.frame(
-  date  = Sys.Date(),
-  value = as.numeric(df_today$`Key New CBK Indicative Exchange Rates`[1]),
-  source = "Actual"
-)
+# Today's indicative rate from the CBK home page (best effort)
+today_rate <- tryCatch({
+  tables <- read_html(GET(CBK_HOME, user_agent(UA), timeout(60))) %>% html_table()
+  hit <- Filter(function(t) any(grepl("Indicative", names(t), ignore.case = TRUE)), tables)
+  v <- suppressWarnings(as.numeric(gsub("[^0-9.]", "", unlist(hit[[1]][1, ]))))
+  v <- v[!is.na(v) & v > 20 & v < 500][1]
+  if (is.na(v)) NULL else v
+}, error = function(e) NULL)
+if (is.null(today_rate)) {
+  warn("Could not read today's CBK indicative rate from the home page; using the monthly series only.")
+} else {
+  df_forex <- bind_rows(df_forex, data.frame(date = Sys.Date(), value = today_rate, source = "Actual"))
+}
 
+df_forex <- df_forex %>%
+  arrange(date) %>%
+  distinct(date, .keep_all = TRUE) %>%
+  mutate(date = format(date, "%Y-%m-%d"), value = round(value, 4)) %>%
+  select(date, value, source)
 
-# Replace current month in df_forex with scraped value
-df_forex <- df_forex %>% bind_rows(df_today)
+notice(sprintf("Exchange rate: latest actual month %s at KSh %.2f/USD; %d forecast month(s); today's rate %s; %d rows.",
+               format(latest_actual, "%b %Y"), tail(df_actual$value, 1), max(months_gap, 0),
+               if (is.null(today_rate)) "not read" else sprintf("%.2f", today_rate), nrow(df_forex)))
 
-# Replace entire table contents
-# Step 1: Delete all existing records
-httr::DELETE(
-  url = paste0(supabase_url, "/rest/v1/df_forex?id=gte.0"),
-  httr::add_headers(
-    apikey = supabase_api,
-    Authorization = paste("Bearer", supabase_api)
-  )
-)
-
-# Step 2: Insert new data
-httr::POST(
-  url = paste0(supabase_url, "/rest/v1/df_forex"),
-  httr::add_headers(
-    apikey = supabase_api,
-    Authorization = paste("Bearer", supabase_api),
-    `Content-Type` = "application/json",
-    Prefer = "return=representation"
-  ),
-  body = jsonlite::toJSON(df_forex, auto_unbox = TRUE, null = "null")
-)
-
+sb_replace("df_forex", df_forex)

@@ -1,0 +1,78 @@
+name: CBK indicators (forex, interest, revenue & expenditure)
+
+# Every Monday 08:12 Nairobi time (05:12 UTC): the forex / WACD / finance
+# slots in the stagger plan in gdp-population-sheet-sync.yml, after the
+# 08:07 GDP & population sync. Each script finds the current CBK file link
+# itself, so new CBK uploads are picked up automatically.
+#
+# Run by hand from the Actions tab ("Run workflow"). Manual runs are a DRY
+# RUN by default: they calculate everything and report it on the run page
+# (Annotations) without writing to Supabase. Untick "dry_run" to write.
+on:
+  schedule:
+    - cron: "12 5 * * 1"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run: calculate and report only, don't write to Supabase"
+        type: boolean
+        default: true
+
+concurrency:
+  group: cbk-indicators
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+      # Scheduled runs write; manual runs follow the dry_run box.
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      - name: Install R packages
+        id: deps
+        uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          packages: |
+            any::dplyr
+            any::lubridate
+            any::forecast
+            any::zoo
+            any::purrr
+            any::httr
+            any::jsonlite
+            any::rvest
+
+      # Each script runs even if an earlier one failed, so one broken CBK
+      # file doesn't hold up the others; any failure still fails the run
+      # (and GitHub emails the repo owner).
+      - name: Exchange rate (df_forex.R)
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        run: Rscript df_forex.R
+
+      - name: Interest payments (df_wacd.R)
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        run: Rscript df_wacd.R
+
+      - name: Revenue & expenditure (df_finance.R)
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        run: Rscript df_finance.R
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### CBK indicators"
+            echo "- Ran: $(date -u '+%Y-%m-%d %H:%M UTC') (dry run: ${DRY_RUN})"
+            echo "- Each script's result is under Annotations above."
+          } >> "$GITHUB_STEP_SUMMARY"
