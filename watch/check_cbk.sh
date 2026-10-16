@@ -2,7 +2,11 @@
 # Checks CBK's Government Finance Statistics page for a new version of a file.
 #
 #   watch/check_cbk.sh <name> <link-pattern>
-#   e.g. watch/check_cbk.sh public_debt 'Public%20Debt\.csv'
+#   e.g. watch/check_cbk.sh public_debt 'Public(%20| )Debt\.csv'
+#
+# The pattern should accept both '%20' and a literal space: CBK has published
+# the same link both ways (Oct 2026: "1071243323_Public Debt.csv", with a
+# space, which broke a %20-only pattern).
 #
 # CBK re-uploads files under a new numeric prefix (42346012_Public Debt.csv ->
 # 1071243323_Public Debt.csv), so the link is found on the page each time and
@@ -23,7 +27,9 @@ if [ -z "$path" ]; then
   echo "::error::No link matching '${PATTERN}' found on $PAGE (page layout may have changed)"
   exit 1
 fi
-case "$path" in http*) url="$path" ;; *) url="https://www.centralbank.go.ke${path}" ;; esac
+case "$path" in http*) url="$path" ;; *) url="${CBK_BASE:-https://www.centralbank.go.ke}${path}" ;; esac
+url="${url// /%20}"   # curl needs spaces encoded; also keeps the state file stable
+# (CBK_BASE overrides the site root, for testing against a local copy of the page.)
 
 tmp="$(mktemp)"
 curl -fsSL --retry 3 --max-time 120 -A "$UA" -o "$tmp" "$url"

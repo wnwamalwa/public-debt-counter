@@ -20,4 +20,4 @@ Repository secrets required (Settings → Secrets and variables → Actions):
 
 To watch another file later (e.g. Revenue and Expenditure), add another
 check step with its own name and pattern, e.g.
-`watch/check_cbk.sh revenue_expenditure 'Revenue%20and%20Expenditure\.csv'`.
+`watch/check_cbk.sh revenue_expenditure 'Revenue(%20| )and(%20| )Expenditure\.csv'`.

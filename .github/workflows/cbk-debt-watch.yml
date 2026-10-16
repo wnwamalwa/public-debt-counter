@@ -28,7 +28,7 @@ jobs:
 
       - name: Check CBK for a new Public Debt file
         id: check
-        run: watch/check_cbk.sh public_debt 'Public%20Debt\.csv'
+        run: bash watch/check_cbk.sh public_debt 'Public(%20| )Debt\.csv'
 
       - name: Set up R
         if: steps.check.outputs.changed == 'true' || inputs.force
