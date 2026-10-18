@@ -18,13 +18,17 @@ on:
         type: boolean
         default: true
 
+permissions:
+  contents: read
+  issues: write   # to open an issue when a scheduled run fails
+
 concurrency:
   group: cbk-indicators
   cancel-in-progress: false
 
 jobs:
   update:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # pinned: ubuntu-latest moves to Ubuntu 26 from 19 Oct 2026
     timeout-minutes: 30
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -32,7 +36,7 @@ jobs:
       # Scheduled runs write; manual runs follow the dry_run box.
       DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up R
         uses: r-lib/actions/setup-r@v2
@@ -76,3 +80,20 @@ jobs:
             echo "- Ran: $(date -u '+%Y-%m-%d %H:%M UTC') (dry run: ${DRY_RUN})"
             echo "- Each script's result is under Annotations above."
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # Scheduled runs only: open an issue (or comment on the open one) so a
+      # failure is noticed. GitHub emails the repository's watchers about it.
+      - name: Open an issue if this run failed
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="Scheduled run failed: ${{ github.workflow }}"
+          url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          existing=$(gh issue list --repo "${{ github.repository }}" --state open --search "in:title \"$title\"" --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "${{ github.repository }}" --body "Failed again on $(date -u '+%Y-%m-%d %H:%M UTC'): $url"
+          else
+            gh issue create --repo "${{ github.repository }}" --title "$title" \
+              --body "The scheduled run on $(date -u '+%Y-%m-%d %H:%M UTC') failed: $url. Close this issue once it is fixed."
+          fi

@@ -14,16 +14,20 @@ on:
     - cron: "7 5 * * 1"
   workflow_dispatch: {}
 
+permissions:
+  contents: read
+  issues: write   # to open an issue when a scheduled run fails
+
 concurrency:
   group: gdp-population-sheet-sync
   cancel-in-progress: false
 
 jobs:
   sync:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # pinned: ubuntu-latest moves to Ubuntu 26 from 19 Oct 2026
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up R
         uses: r-lib/actions/setup-r@v2
@@ -93,3 +97,20 @@ jobs:
             echo "  tabs and upsert df_gdp/df_pop + df_gdp_metrics/df_pop_metrics."
             echo "- See the step logs above for each script's pipeline summary."
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # Scheduled runs only: open an issue (or comment on the open one) so a
+      # failure is noticed. GitHub emails the repository's watchers about it.
+      - name: Open an issue if this run failed
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="Scheduled run failed: ${{ github.workflow }}"
+          url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          existing=$(gh issue list --repo "${{ github.repository }}" --state open --search "in:title \"$title\"" --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "${{ github.repository }}" --body "Failed again on $(date -u '+%Y-%m-%d %H:%M UTC'): $url"
+          else
+            gh issue create --repo "${{ github.repository }}" --title "$title" \
+              --body "The scheduled run on $(date -u '+%Y-%m-%d %H:%M UTC') failed: $url. Close this issue once it is fixed."
+          fi
