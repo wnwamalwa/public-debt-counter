@@ -1,0 +1,56 @@
+name: New reports to enter in the sheet (OCOB, Treasury)
+
+# Every Monday at 09:07 Nairobi time (06:07 UTC), check for new:
+#   - Controller of Budget (OCOB) National Government Budget Implementation
+#     Review Reports (quarterly and full year), and
+#   - National Treasury Annual Public Debt Report / Medium Term Debt Strategy.
+# When one appears, open a GitHub issue assigned to the repository owner,
+# with a checklist of the Google Sheet tabs it feeds. GitHub emails the
+# assignee. See watch/check_reports.py; state is in watch/reports.json.
+on:
+  schedule:
+    - cron: "7 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write   # to commit watch/reports.json
+  issues: write     # to open the alert issue
+
+concurrency:
+  group: reports-watch
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Check OCOB and Treasury
+        id: check
+        run: python3 watch/check_reports.py
+
+      - name: Open an issue for each batch of new reports
+        if: steps.check.outputs.new == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: ${{ steps.check.outputs.title }}
+        run: |
+          gh label create "sheet update" --color FBCA04 --description "New external data to enter in the Google Sheet" 2>/dev/null || true
+          gh issue create --repo "${{ github.repository }}" \
+            --title "$TITLE" --body-file watch/new_reports.md \
+            --assignee "${{ github.repository_owner }}" --label "sheet update"
+          {
+            echo "### New reports"
+            cat watch/new_reports.md
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remember what has been seen
+        run: |
+          git add watch/reports.json 2>/dev/null || true
+          if git diff --cached --quiet; then echo "No change."; exit 0; fi
+          git config user.name  "reports-watch-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git commit -m "Reports watch: record OCOB/Treasury reports seen"
+          for i in 1 2 3; do git pull --rebase -q && git push && break; sleep 5; done

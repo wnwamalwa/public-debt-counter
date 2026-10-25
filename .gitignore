@@ -10,3 +10,5 @@ gsheets.json
 .Rhistory
 .RData
 .Rproj.user/
+watch/new_reports.md
+__pycache__/
