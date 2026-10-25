@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
-# Checks CBK's Government Finance Statistics page for a new version of a file.
+# Checks a CBK statistics page for a new version of a file.
 #
-#   watch/check_cbk.sh <name> <link-pattern>
+#   watch/check_cbk.sh <name> <link-pattern> [page]
 #   e.g. watch/check_cbk.sh public_debt 'Public(%20| )Debt\.csv'
+#        watch/check_cbk.sh forex_monthly 'Monthly(%20| )exchange(%20| )rate(%20| )\(end(%20| )period\)\.csv' \
+#          https://www.centralbank.go.ke/statistics/exchange-rates/
+# [page] defaults to the Government Finance Statistics page. Each <name> keeps
+# its own watch/<name>.state, so several pipelines can watch the same CBK file
+# and each runs once per new version.
 #
 # The pattern should accept both '%20' and a literal space: CBK has published
 # the same link both ways (Oct 2026: "1071243323_Public Debt.csv", with a
@@ -15,7 +20,7 @@
 set -euo pipefail
 
 NAME="$1"; PATTERN="$2"
-PAGE="${CBK_PAGE:-https://www.centralbank.go.ke/statistics/government-finance-statistics/}"
+PAGE="${3:-${CBK_PAGE:-https://www.centralbank.go.ke/statistics/government-finance-statistics/}}"
 UA="Mozilla/5.0 (compatible; KenyaDebtCounterBot/1.0; +https://kenyadebtcounter.vercel.app)"
 DIR="$(cd "$(dirname "$0")" && pwd)"
 STATE="$DIR/$NAME.state"
@@ -46,7 +51,7 @@ echo "File      : $url"
 echo "Rows      : $lines (latest year,month: $last_row)"
 if [ "$new_state" = "$old_state" ]; then
   echo "Status    : unchanged since last check"
-  { echo "changed=false"; echo "url=$url"; } >> "$OUT"
+  { echo "changed=false"; echo "url=$url"; echo "latest=$last_row"; } >> "$OUT"
 else
   echo "Status    : NEW VERSION (previous: $(grep '^url=' "$STATE" 2>/dev/null | cut -d= -f2- || echo none))"
   printf '%s\n' "$new_state" > "$STATE.new"

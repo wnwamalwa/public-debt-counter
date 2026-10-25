@@ -1,23 +1,24 @@
 # CBK data watch
 
-`.github/workflows/cbk-debt-watch.yml` runs every Friday at 16:00 EAT on GitHub Actions:
+CBK re-uploads its files at irregular times. The pipelines check every two weeks
+(1st and 15th of the month) and only run when a file has actually changed:
 
-1. `watch/check_cbk.sh` finds the current **Public Debt** CSV link on
-   https://www.centralbank.go.ke/statistics/government-finance-statistics/
-   and hashes the file.
-2. If the link or contents differ from `watch/public_debt.state`, it runs
-   `df_debt.R`, which updates Supabase (`df_debt`, `df_debt_metrics`). The site
-   picks up the new figures within 30 seconds.
-3. After a successful update it commits the new `public_debt.state`.
-   If anything fails, the state isn't saved (so next week retries) and GitHub
-   emails the repo owner.
+| Workflow | Checks (Nairobi) | Watches | Runs |
+|---|---|---|---|
+| `cbk-debt-watch.yml` | 1st & 15th, 08:02 | Public Debt CSV | `df_debt.R` |
+| `cbk-indicators.yml` | 1st & 15th, 08:12 | Monthly exchange rate CSV; daily rate on the CBK home page | `df_forex.R` |
+| | | Revenue and Expenditure CSV; Public Debt CSV | `df_wacd.R` |
+| | | Revenue and Expenditure CSV | `df_finance.R` |
 
-Run it by hand: GitHub → Actions → *CBK public debt watch* → **Run workflow**
-(tick *force* to re-run `df_debt.R` even with no new file).
+`watch/check_cbk.sh <name> <link-pattern> [page]` finds the current link on the
+CBK page (the numeric prefix changes with every upload), downloads the file and
+compares link + SHA-256 with `watch/<name>.state`. Each script keeps its own state
+files, so two scripts watching the same CBK file each run once per new version.
+A state file is only updated (and committed by the workflow) after its script
+succeeds, so a failure is retried at the next check, and scheduled failures open
+a GitHub issue.
 
-Repository secrets required (Settings → Secrets and variables → Actions):
-`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE`.
+Run by hand: GitHub → Actions → the workflow → **Run workflow** (tick *force*
+to run even with no new file; CBK indicators also has *dry_run*, on by default).
 
-To watch another file later (e.g. Revenue and Expenditure), add another
-check step with its own name and pattern, e.g.
-`watch/check_cbk.sh revenue_expenditure 'Revenue(%20| )and(%20| )Expenditure\.csv'`.
+Repository secrets required: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE`.

@@ -6,8 +6,9 @@ name: GDP & population sheet sync
 # so this workflow always picks up that week's rebuilt series rather than
 # racing it. Off the hour on purpose: GitHub delays :00 jobs, and each
 # scheduled job gets its own 5-minute slot so none hit Supabase together.
-# Slot plan (Nairobi): Mon 07:03 sheet refresh | 08:07 GDP & population |
-# 08:12 forex | 08:17 WACD | 08:22 finance | Fri 16:07 CBK debt watch.
+# Slot plan (Nairobi): Mon 07:03 sheet refresh | Mon 08:07 GDP & population |
+# 1st & 15th 08:02 CBK debt watch | 1st & 15th 08:12 CBK indicators (both run
+# only when a CBK file changed) | daily 07:37 readership.
 # Also runnable by hand from the Actions tab ("Run workflow").
 on:
   schedule:

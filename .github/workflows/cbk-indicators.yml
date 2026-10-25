@@ -1,26 +1,40 @@
 name: CBK indicators (forex, interest, revenue & expenditure)
 
-# Every Monday 08:12 Nairobi time (05:12 UTC): the forex / WACD / finance
-# slots in the stagger plan in gdp-population-sheet-sync.yml, after the
-# 08:07 GDP & population sync. Each script finds the current CBK file link
-# itself, so new CBK uploads are picked up automatically.
+# Checks CBK every two weeks -- on the 1st and 15th of each month at 08:12
+# Nairobi (05:12 UTC) -- and runs
+# each script ONLY when one of its CBK inputs has changed since that script
+# last ran successfully:
 #
-# Run by hand from the Actions tab ("Run workflow"). Manual runs are a DRY
-# RUN by default: they calculate everything and report it on the run page
-# (Annotations) without writing to Supabase. Untick "dry_run" to write.
+#   df_forex.R    Monthly exchange rate (end period) CSV, or a new daily rate
+#                 posted on the CBK home page
+#   df_wacd.R     Revenue and Expenditure CSV, or a new Public Debt CSV (the
+#                 implied interest rate divides by the latest debt stock)
+#   df_finance.R  Revenue and Expenditure CSV
+#
+# Each script has its own watch/<name>.state files (link + SHA-256 of the
+# file), committed after the script succeeds, so a failed run is retried at
+# the next check. With no change, the run takes a few seconds and writes nothing.
+#
+# Run by hand from the Actions tab ("Run workflow"):
+#   force    run all three scripts even if nothing changed
+#   dry_run  calculate and report only, don't write to Supabase (default on)
 on:
   schedule:
-    - cron: "12 5 * * 1"
+    - cron: "12 5 1,15 * *"
   workflow_dispatch:
     inputs:
+      force:
+        description: "Run all three scripts even if no CBK file has changed"
+        type: boolean
+        default: false
       dry_run:
         description: "Dry run: calculate and report only, don't write to Supabase"
         type: boolean
         default: true
 
 permissions:
-  contents: read
-  issues: write   # to open an issue when a scheduled run fails
+  contents: write   # to commit watch/*.state after a successful update
+  issues: write     # to open an issue when a scheduled run fails
 
 concurrency:
   group: cbk-indicators
@@ -35,16 +49,68 @@ jobs:
       SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
       # Scheduled runs write; manual runs follow the dry_run box.
       DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+      FORCE: ${{ github.event_name == 'workflow_dispatch' && inputs.force || 'false' }}
+      FX_PAGE: https://www.centralbank.go.ke/statistics/exchange-rates/
+      RE_PATTERN: 'Revenue(%20| )and(%20| )Expenditure\.csv'
+      DEBT_PATTERN: 'Public(%20| )Debt\.csv'
+      FX_PATTERN: 'Monthly(%20| )exchange(%20| )rate(%20| )(\(|%28)end(%20| )period(\)|%29)\.csv'
     steps:
       - uses: actions/checkout@v5
 
+      # --- What changed? ------------------------------------------------------
+      - name: Check CBK for new files
+        id: watch
+        run: |
+          set -euo pipefail
+          check() {  # check <state-name> <pattern> [page] -> prints true/false
+            local out; out="$(mktemp)"
+            GITHUB_OUTPUT="$out" bash watch/check_cbk.sh "$@" >&2
+            grep -q '^changed=true' "$out" && echo true || echo false
+          }
+          fx_monthly=$(check forex_monthly "$FX_PATTERN" "$FX_PAGE")
+          wacd_re=$(check wacd_revenue_expenditure "$RE_PATTERN")
+          wacd_debt=$(check wacd_public_debt "$DEBT_PATTERN")
+          fin_re=$(check finance_revenue_expenditure "$RE_PATTERN")
+
+          # The daily indicative rate on the home page ("US DOLLAR 129.89 ...
+          # Posted On: 23-10-2026"): a new posting counts as a change for df_forex.R.
+          home="$(curl -fsSL --retry 3 --max-time 60 -A 'Mozilla/5.0 (compatible; KenyaDebtCounterBot/1.0)' https://www.centralbank.go.ke/ || true)"
+          posted="$(printf '%s' "$home" | grep -oE 'Posted On: *[0-9]{2}-[0-9]{2}-[0-9]{4}' | head -1 | grep -oE '[0-9-]{10}' || true)"
+          fx_daily=false
+          if [ -n "$posted" ] && [ "posted=$posted" != "$(cat watch/forex_daily.state 2>/dev/null || true)" ]; then
+            fx_daily=true; echo "posted=$posted" > watch/forex_daily.state.new
+          fi
+          echo "Daily rate posted on: ${posted:-not found}"
+
+          forex=false; wacd=false; finance=false
+          { [ "$fx_monthly" = true ] || [ "$fx_daily" = true ]; } && forex=true
+          { [ "$wacd_re" = true ] || [ "$wacd_debt" = true ]; } && wacd=true
+          [ "$fin_re" = true ] && finance=true
+          if [ "$FORCE" = true ]; then forex=true; wacd=true; finance=true; fi
+          {
+            echo "forex=$forex"; echo "wacd=$wacd"; echo "finance=$finance"
+            if [ "$forex$wacd$finance" != falsefalsefalse ]; then echo "any=true"; else echo "any=false"; fi
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "### CBK indicators: what changed"
+            echo "| Script | Runs? | Why |"
+            echo "|---|---|---|"
+            echo "| df_forex.R | $forex | monthly file changed: $fx_monthly; new daily rate: $fx_daily (posted ${posted:-?}) |"
+            echo "| df_wacd.R | $wacd | Revenue & Expenditure changed: $wacd_re; Public Debt changed: $wacd_debt |"
+            echo "| df_finance.R | $finance | Revenue & Expenditure changed: $fin_re |"
+            echo "Force: $FORCE · Dry run: $DRY_RUN"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # --- Run only what changed ---------------------------------------------
       - name: Set up R
+        if: steps.watch.outputs.any == 'true'
         uses: r-lib/actions/setup-r@v2
         with:
           use-public-rspm: true
 
       - name: Install R packages
         id: deps
+        if: steps.watch.outputs.any == 'true'
         uses: r-lib/actions/setup-r-dependencies@v2
         with:
           packages: |
@@ -58,28 +124,41 @@ jobs:
             any::rvest
 
       # Each script runs even if an earlier one failed, so one broken CBK
-      # file doesn't hold up the others; any failure still fails the run
-      # (and GitHub emails the repo owner).
+      # file doesn't hold up the others; any failure still fails the run.
       - name: Exchange rate (df_forex.R)
-        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        id: forex
+        if: ${{ !cancelled() && steps.watch.outputs.forex == 'true' && steps.deps.outcome == 'success' }}
         run: Rscript df_forex.R
 
       - name: Interest payments (df_wacd.R)
-        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        id: wacd
+        if: ${{ !cancelled() && steps.watch.outputs.wacd == 'true' && steps.deps.outcome == 'success' }}
         run: Rscript df_wacd.R
 
       - name: Revenue & expenditure (df_finance.R)
-        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        id: finance
+        if: ${{ !cancelled() && steps.watch.outputs.finance == 'true' && steps.deps.outcome == 'success' }}
         run: Rscript df_finance.R
 
-      - name: Summary
-        if: always()
+      # --- Remember what each successful script has seen ---------------------
+      # Only real (not dry) runs, and only for scripts that succeeded, so
+      # anything that failed is retried at the next check.
+      - name: Record new file versions
+        if: ${{ !cancelled() && steps.watch.outputs.any == 'true' }}
         run: |
-          {
-            echo "### CBK indicators"
-            echo "- Ran: $(date -u '+%Y-%m-%d %H:%M UTC') (dry run: ${DRY_RUN})"
-            echo "- Each script's result is under Annotations above."
-          } >> "$GITHUB_STEP_SUMMARY"
+          set -euo pipefail
+          if [ "$DRY_RUN" = true ]; then echo "Dry run: nothing recorded."; exit 0; fi
+          keep() { for n in "$@"; do [ -f "watch/$n.state.new" ] && mv "watch/$n.state.new" "watch/$n.state"; done; true; }
+          [ "${{ steps.forex.outcome }}" = success ]   && keep forex_monthly forex_daily
+          [ "${{ steps.wacd.outcome }}" = success ]    && keep wacd_revenue_expenditure wacd_public_debt
+          [ "${{ steps.finance.outcome }}" = success ] && keep finance_revenue_expenditure
+          rm -f watch/*.state.new
+          git add watch/*.state
+          if git diff --cached --quiet; then echo "Nothing to record."; exit 0; fi
+          git config user.name  "cbk-watch-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git commit -m "CBK indicators updated: forex=${{ steps.forex.outcome }}, wacd=${{ steps.wacd.outcome }}, finance=${{ steps.finance.outcome }}"
+          for i in 1 2 3; do git pull --rebase -q && git push && break; sleep 5; done
 
       # Scheduled runs only: open an issue (or comment on the open one) so a
       # failure is noticed. GitHub emails the repository's watchers about it.
