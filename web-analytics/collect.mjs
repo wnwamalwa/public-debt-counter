@@ -39,7 +39,11 @@ if (!DRY_RUN && (!SB_URL || !SB_KEY)) fail("SUPABASE_URL and SUPABASE_SERVICE_RO
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const iso = (d) => d.toISOString().slice(0, 10);
 
-async function vercel(path, params) {
+// Breakdowns the Vercel plan doesn't include (HTTP 402, e.g. UTM on Hobby) are
+// skipped with one warning instead of failing the run.
+const PLAN_LIMITED = new Set();
+
+async function vercel(path, params, { optional = false } = {}) {
   const url = new URL(`${env("VERCEL_API", "https://api.vercel.com")}/v1/query/web-analytics/${path}`);
   url.searchParams.set("projectId", PROJECT);
   if (TEAM) url.searchParams.set(TEAM.startsWith("team_") ? "teamId" : "slug", TEAM);
@@ -49,6 +53,13 @@ async function vercel(path, params) {
     if (res.status === 429 && attempt <= 5) {
       await sleep(Number(res.headers.get("retry-after")) * 1000 || 2000 * attempt);
       continue;
+    }
+    if (res.status === 402 && optional) {
+      if (!PLAN_LIMITED.has(params.by)) {
+        PLAN_LIMITED.add(params.by);
+        console.log(`::warning::Vercel's current plan doesn't include the "${params.by}" breakdown (HTTP 402); skipping it. ${(await res.text()).slice(0, 160)}`);
+      }
+      return null;
     }
     if (!res.ok) fail(`Vercel ${path} failed: HTTP ${res.status} ${(await res.text()).slice(0, 300)}`);
     const body = await res.json();
@@ -76,12 +87,14 @@ const daily = dates.map((date) => ({
 const breakdown = [];
 for (const date of dates) {
   for (const [dim, [vDim, empty]] of Object.entries(DIMENSIONS)) {
+    if (PLAN_LIMITED.has(vDim)) continue;
     const rows = await vercel("visits/aggregate", {
       since: `${date}T00:00:00.000Z`,
       until: `${date}T23:59:59.999Z`,
       by: vDim,
       limit: 100,
-    });
+    }, { optional: dim !== "page" && dim !== "country" });
+    if (rows === null) continue;
     const merged = new Map();
     for (const r of rows) {
       const raw = r[vDim];

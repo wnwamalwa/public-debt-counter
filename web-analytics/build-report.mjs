@@ -284,7 +284,11 @@ const outside = readers - kenya;
 const africaOther = countryRows.filter((r) => AFRICA.has(r.value) && r.value !== "KE").reduce((s, r) => s + r.visitors, 0);
 const peak = daily.reduce((a, b) => (b.visitors > a.visitors ? b : a), daily[0]);
 const wk = weekdayBars(daily);
+// Campaign tags (utm_source) need a paid Vercel plan; on Hobby there are none,
+// so the "via embedded counter" figures are replaced with ones that exist.
+const hasUtm = breakdown.utm_source.length > 0;
 const embed = breakdown.utm_source.find((r) => r.value === "embed")?.visitors || 0;
+const desktop = breakdown.device.find((r) => r.value === "desktop")?.visitors || 0;
 const mobile = breakdown.device.find((r) => r.value === "mobile")?.visitors || 0;
 const deviceTotal = breakdown.device.reduce((s, r) => s + r.visitors, 0) || 1;
 const refTotal = breakdown.referrer.reduce((s, r) => s + r.visitors, 0) || 1;
@@ -422,7 +426,7 @@ h3 { font-size: 10.5pt; margin: 0 0 2mm; font-weight: 700 }
     <div class="kpi"><div class="kpi-n">${fmt(views)}</div><div class="kpi-l">page views</div><div class="kpi-s">${(views / readers).toFixed(1)} pages per reader</div></div>
     <div class="kpi"><div class="kpi-n">${nCountries}</div><div class="kpi-l">countries reached</div><div class="kpi-s">${fmt(outside)} readers outside Kenya</div></div>
     <div class="kpi"><div class="kpi-n">${pct(kenya / readers, 0)}</div><div class="kpi-l">of readers in Kenya</div><div class="kpi-s">${fmt(africaOther)} elsewhere in Africa</div></div>
-    <div class="kpi"><div class="kpi-n">${pct(mobile / deviceTotal, 0)}</div><div class="kpi-l">read on a phone</div><div class="kpi-s">${fmt(embed)} arrived via the embedded counter</div></div>
+    <div class="kpi"><div class="kpi-n">${pct(mobile / deviceTotal, 0)}</div><div class="kpi-l">read on a phone</div><div class="kpi-s">${hasUtm ? `${fmt(embed)} arrived via the embedded counter` : `${pct(desktop / deviceTotal, 0)} on a computer`}</div></div>
   </div>
   <h3>Readers by country</h3>
   <div class="sub">Each country shaded by its readers in ${M}. Kenya is outlined.</div>
@@ -505,7 +509,9 @@ h3 { font-size: 10.5pt; margin: 0 0 2mm; font-weight: 700 }
         <div class="kpi"><div class="kpi-n">${pct(search / refTotal, 0)}</div><div class="kpi-l">Search</div></div>
         <div class="kpi"><div class="kpi-n">${pct(social / refTotal, 0)}</div><div class="kpi-l">Social media</div></div>
         <div class="kpi"><div class="kpi-n">${pct(news / refTotal, 0)}</div><div class="kpi-l">News sites</div></div>
-        <div class="kpi"><div class="kpi-n">${fmt(embed)}</div><div class="kpi-l">Via embedded counter</div></div>
+        ${hasUtm
+          ? `<div class="kpi"><div class="kpi-n">${fmt(embed)}</div><div class="kpi-l">Via embedded counter</div></div>`
+          : `<div class="kpi"><div class="kpi-n">${pct((breakdown.referrer.find((r) => r.value === "(direct)")?.visitors || 0) / refTotal, 0)}</div><div class="kpi-l">Direct / apps</div></div>`}
       </div></div></div>
   </div>
   <div class="foot"><span>"Direct" covers typed addresses, bookmarks and apps (e.g. WhatsApp) that don't pass on where the link was.</span><span>4</span></div>
@@ -519,7 +525,7 @@ h3 { font-size: 10.5pt; margin: 0 0 2mm; font-weight: 700 }
     <h4>Readers</h4><p>A reader is a device that opened at least one page on a given day. Vercel identifies devices without cookies, from a fingerprint that changes every day, so the same person reading on two days counts twice. Monthly readers are the sum of daily readers. They are a fair measure of reach, not a count of unique people.</p>
     <h4>Page views</h4><p>Every page opened, including several pages by the same reader. Pages per reader is page views ÷ readers.</p>
     <h4>Country</h4><p>From the reader's internet connection. Readers using a VPN or some mobile networks can appear in another country. Country is not available below national level, so county figures cannot be shown.</p>
-    <h4>Where readers came from</h4><p>The site that linked to the counter, when the browser passes it on. Messaging apps and many mobile apps don't, so their readers appear as "Direct". Links in the embedded counter carry the tag <i>utm_source=embed</i>.</p>
+    <h4>Where readers came from</h4><p>The site that linked to the counter, when the browser passes it on. Messaging apps and many mobile apps don't, so their readers appear as "Direct". Links in the embedded counter carry the tag <i>utm_source=embed</i>; counting those needs a paid Vercel plan, so the figure appears only when it is available.</p>
     <h4>What is not counted</h4><p>Bots and crawlers, preview and test versions of the site, readers who block analytics scripts, and the embedded counter itself.</p>
     <h4>Privacy</h4><p>No cookies are set and no personal data is stored. Only totals are kept: per day, and per page, country, referring site, device and campaign tag.</p>
     <h4>Contact</h4><p>Institute of Economic Affairs (IEA Kenya), ACK Garden House, 5th Floor, 1st Ngong Avenue, P.O. Box 53989-00200, Nairobi. admin@ieakenya.or.ke</p>
