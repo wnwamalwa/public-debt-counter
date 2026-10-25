@@ -110,9 +110,12 @@ sb_get <- function(table, query = "select=*") {
   fromJSON(content(res, as = "text", encoding = "UTF-8"), flatten = TRUE)
 }
 
+# rownames = FALSE: a data frame built from a named value (e.g. lubridate's
+# days_in_month(), named "Oct") would otherwise carry a "_row" field that the
+# Supabase table does not have, and the whole upload is rejected.
 sb_post <- function(table, df) {
   POST(paste0(SUPABASE_URL, "/rest/v1/", table), sb_headers("return=minimal"),
-       body = toJSON(df, auto_unbox = TRUE, null = "null", digits = NA, Date = "ISO8601"), timeout(120))
+       body = toJSON(df, auto_unbox = TRUE, null = "null", digits = NA, Date = "ISO8601", rownames = FALSE), timeout(120))
 }
 
 #' Replace the whole contents of a table with `df`, safely: the current rows

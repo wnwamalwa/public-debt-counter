@@ -142,7 +142,7 @@ this_and_next <- df_all %>% filter(date %in% c(current_month, next_month)) %>% a
 if (nrow(this_and_next) < 2) fail("Could not find this month and next month in the interest series.")
 gps_wacd_dom <- (this_and_next$int_dom_smooth[2] - this_and_next$int_dom_smooth[1]) / this_and_next$int_dom_smooth[1]
 gps_wacd_ext <- (this_and_next$int_ext_smooth[2] - this_and_next$int_ext_smooth[1]) / this_and_next$int_ext_smooth[1]
-fraction <- day(Sys.Date()) / days_in_month(current_month)
+fraction <- unname(day(Sys.Date()) / days_in_month(current_month))  # days_in_month() is named ("Oct")
 int_dom_now <- this_and_next$int_dom_smooth[1] * (1 + gps_wacd_dom * fraction)
 int_ext_now <- this_and_next$int_ext_smooth[1] * (1 + gps_wacd_ext * fraction)
 

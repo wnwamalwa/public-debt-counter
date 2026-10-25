@@ -65,28 +65,42 @@ if (months_gap > 0) {
   ))
 }
 
-# Today's indicative rate from the CBK home page (best effort)
+# Latest daily indicative rate from the CBK home page (best effort).
+# The home page shows a small "Daily KES Exchange Rates" table:
+#   US DOLLAR | 129.89 ... Posted On: 23-10-2026
+# The rate is stored on its "Posted On" date (CBK does not post at weekends).
 today_rate <- tryCatch({
-  tables <- read_html(GET(CBK_HOME, user_agent(UA), timeout(60))) %>% html_table()
-  hit <- Filter(function(t) any(grepl("Indicative", names(t), ignore.case = TRUE)), tables)
-  v <- suppressWarnings(as.numeric(gsub("[^0-9.]", "", unlist(hit[[1]][1, ]))))
+  page <- read_html(GET(CBK_HOME, user_agent(UA), timeout(60)))
+  tbls <- html_elements(page, "table")
+  tbls <- tbls[grepl("US\\s*DOLLAR", html_text2(tbls), ignore.case = TRUE)]
+  if (!length(tbls)) stop("no exchange rate table")
+  rows <- html_elements(tbls[[1]], "tr")
+  txt  <- html_text2(rows)
+  usd  <- rows[grepl("US\\s*DOLLAR", txt, ignore.case = TRUE)]
+  if (!length(usd)) stop("no US DOLLAR row")
+  cells <- html_text2(html_elements(usd[[1]], "td"))
+  v <- suppressWarnings(as.numeric(gsub("[^0-9.]", "", cells)))
   v <- v[!is.na(v) & v > 20 & v < 500][1]
-  if (is.na(v)) NULL else v
+  if (is.na(v)) stop("no plausible rate")
+  posted <- grep("Posted On", txt, value = TRUE, ignore.case = TRUE)[1]
+  d <- if (is.na(posted)) NA else suppressWarnings(dmy(sub("(?i).*posted on:?\\s*", "", posted, perl = TRUE)))
+  if (is.na(d) || d > Sys.Date() || d < Sys.Date() - 10) d <- Sys.Date()
+  list(value = v, date = d)
 }, error = function(e) NULL)
 if (is.null(today_rate)) {
-  warn("Could not read today's CBK indicative rate from the home page; using the monthly series only.")
+  warn("Could not read the daily CBK indicative rate from the home page; using the monthly series only.")
 } else {
-  df_forex <- bind_rows(df_forex, data.frame(date = Sys.Date(), value = today_rate, source = "Actual"))
+  df_forex <- bind_rows(df_forex, data.frame(date = today_rate$date, value = today_rate$value, source = "Actual"))
 }
 
 df_forex <- df_forex %>%
-  arrange(date) %>%
+  arrange(date, source != "Actual") %>%   # an actual rate wins over a forecast on the same date
   distinct(date, .keep_all = TRUE) %>%
   mutate(date = format(date, "%Y-%m-%d"), value = round(value, 4)) %>%
   select(date, value, source)
 
 notice(sprintf("Exchange rate: latest actual month %s at KSh %.2f/USD; %d forecast month(s); today's rate %s; %d rows.",
                format(latest_actual, "%b %Y"), tail(df_actual$value, 1), max(months_gap, 0),
-               if (is.null(today_rate)) "not read" else sprintf("%.2f", today_rate), nrow(df_forex)))
+               if (is.null(today_rate)) "not read" else sprintf("%.2f (posted %s)", today_rate$value, format(today_rate$date, "%d %b %Y")), nrow(df_forex)))
 
 sb_replace("df_forex", df_forex)
