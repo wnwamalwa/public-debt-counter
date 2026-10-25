@@ -1,0 +1,104 @@
+name: Readership (Vercel Web Analytics)
+
+# Daily 07:37 Nairobi (04:37 UTC): copies the last 3 days of the site's Vercel
+# Web Analytics into Supabase (web_daily, web_daily_breakdown), so readership
+# history is kept permanently whatever the Vercel plan's reporting window.
+# On the 2nd of each month it also builds last month's PDF readership report
+# and puts it in Supabase Storage (reports/readers/<month>.pdf and latest.pdf),
+# which the site's /readers page links to.
+#
+# By hand (Actions -> this workflow -> Run workflow):
+#   days     how many past days to (re)fetch; use 31 for the first run
+#   report   also build and upload the PDF report (for "month", default last month)
+#
+# Needs repository secrets VERCEL_TOKEN (Vercel -> Account Settings -> Tokens),
+# SUPABASE_URL and SUPABASE_SERVICE_ROLE (already set for the CBK pipelines).
+on:
+  schedule:
+    - cron: "37 4 * * *"
+    - cron: "52 4 2 * *"   # monthly report, after the daily copy has the last day of the month
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "Days to fetch (31 for the first run)"
+        type: number
+        default: 3
+      report:
+        description: "Also build and upload the PDF report"
+        type: boolean
+        default: false
+      month:
+        description: "Report month as YYYY-MM (blank = last month)"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+  issues: write   # to open an issue when a scheduled run fails
+
+concurrency:
+  group: web-analytics
+  cancel-in-progress: false
+
+jobs:
+  readership:
+    runs-on: ubuntu-24.04  # pinned: ubuntu-latest moves to Ubuntu 26 from 19 Oct 2026
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: web-analytics
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_PROJECT: kenyadebtcounter
+      VERCEL_TEAM: my-duka
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web-analytics/package-lock.json
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Copy Vercel Web Analytics into Supabase
+        if: github.event.schedule != '52 4 2 * *'
+        env:
+          DAYS: ${{ inputs.days || 3 }}
+        run: node collect.mjs
+
+      - name: Build and upload the monthly PDF report
+        if: github.event.schedule == '52 4 2 * *' || inputs.report
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+        run: |
+          month="${{ inputs.month }}"
+          node build-report.mjs ${month:+--month "$month"} --out report.pdf --upload
+
+      - name: Keep the PDF with the run
+        if: github.event.schedule == '52 4 2 * *' || inputs.report
+        uses: actions/upload-artifact@v4
+        with:
+          name: readership-report
+          path: web-analytics/report.pdf
+          retention-days: 90
+
+      - name: Open an issue if this run failed
+        if: failure() && github.event_name == 'schedule'
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="Scheduled run failed: ${{ github.workflow }}"
+          url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          existing=$(gh issue list --repo "${{ github.repository }}" --state open --search "in:title \"$title\"" --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "${{ github.repository }}" --body "Failed again on $(date -u '+%Y-%m-%d %H:%M UTC'): $url"
+          else
+            gh issue create --repo "${{ github.repository }}" --title "$title" \
+              --body "The scheduled run on $(date -u '+%Y-%m-%d %H:%M UTC') failed: $url. Close this issue once it is fixed."
+          fi

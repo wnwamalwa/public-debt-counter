@@ -15,6 +15,8 @@ Supabase tables (and, through them, `api.kenyadebtcounter.or.ke` and
 | `df_wacd.R` | CBK revenue & expenditure CSV (interest columns) | `df_wacd`, `df_wacd_metrics` | `.github/workflows/cbk-indicators.yml` |
 | `df_finance.R` | CBK revenue & expenditure CSV | `df_finance`, `df_finance_metrics` | `.github/workflows/cbk-indicators.yml` |
 | `gdp_g.R` | various | corresponding tables | not scheduled |
+| `web-analytics/collect.mjs` | Vercel Web Analytics (kenyadebtcounter.vercel.app) | `web_daily`, `web_daily_breakdown` | `.github/workflows/web-analytics.yml` (daily) |
+| `web-analytics/build-report.mjs` | `web_daily`, `web_daily_breakdown` | PDF in Storage `reports/readers/` | same workflow, 2nd of each month |
 
 `df_forex.R`, `df_wacd.R` and `df_finance.R` share `pipeline_helpers.R`: they
 find the current CBK file link on the page each run (CBK renames files on every
@@ -35,6 +37,23 @@ in sync with it.
 (runs continuously via `debtcounter-api.service` + `nginx-api.conf` on the
 production host) — not part of either scheduled pipeline above.
 
+## Readership (Vercel Web Analytics)
+
+`web-analytics/collect.mjs` copies the site's Vercel Web Analytics into
+Supabase every day (the last 3 days, re-fetched so late data settles), so the
+history is kept whatever Vercel's reporting window is (one month on Hobby).
+`visitor_metrics_summary_vercel` adds it up, and `visitor_metrics_summary` now
+reads from it (the old session-tracker version is kept as
+`visitor_metrics_summary_legacy`). On the 2nd of each month the same workflow
+builds the PDF readership report (`build-report.mjs`) and uploads it to the
+public Storage bucket `reports` as `readers/<YYYY-MM>.pdf` and
+`readers/latest.pdf`; the site's `/readers` page links to it.
+
+One-off setup: run `sql/web_analytics.sql` in the Supabase SQL editor, add the
+`VERCEL_TOKEN` secret, then run the workflow by hand with **days = 31** to fill
+the past month. `npm run sample` in `web-analytics/` builds a sample report with
+made-up figures, to check the layout.
+
 ## Required repository secrets
 
 Settings → Secrets and variables → Actions:
@@ -44,6 +63,9 @@ Settings → Secrets and variables → Actions:
   bypasses RLS). Verify any candidate key first with
   `scripts/check-supabase-key.sh` before pasting it here (script lives
   alongside this project, not in this repo).
+- `VERCEL_TOKEN` — a Vercel access token that can read the `my-duka` team
+  (Vercel → Account Settings → Tokens; scope it to that team). Used only by the
+  readership workflow.
 - `GSHEET_SERVICE_ACCOUNT` — base64-encoded service-account JSON
   (`iea-kenya-ci-reports@iea-pipeline.iam.gserviceaccount.com`), already
   shared as Viewer on the sheet. Same value used by the
