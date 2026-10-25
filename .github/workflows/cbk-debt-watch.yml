@@ -1,14 +1,14 @@
 name: CBK public debt watch
 
-# Checks CBK every two weeks -- on the 1st and 15th of each month at 08:02
-# Nairobi (05:02 UTC) -- and runs df_debt.R only when the Public Debt file has
-# changed; with no change the run takes a few seconds and writes nothing. Runs
-# 10 minutes before the CBK indicators check, so df_wacd.R (which uses the
-# latest debt stock) sees the new figures. Also runnable by hand from the
+# Checks CBK every two weeks -- on the 1st and 15th of each month at 09:02
+# Nairobi (06:02 UTC) -- and runs df_debt.R only when the Public Debt file has
+# changed; with no change the run takes a few seconds and writes nothing. It
+# goes first; the CBK indicators follow one at a time (09:17 forex, 09:32
+# interest, which uses the latest debt stock, 09:47 revenue & expenditure). Also runnable by hand from the
 # Actions tab ("Run workflow"), with an option to force a Supabase update.
 on:
   schedule:
-    - cron: "2 5 1,15 * *"
+    - cron: "2 6 1,15 * *"
   workflow_dispatch:
     inputs:
       force:

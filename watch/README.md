@@ -1,14 +1,15 @@
 # CBK data watch
 
 CBK re-uploads its files at irregular times. The pipelines check every two weeks
-(1st and 15th of the month) and only run when a file has actually changed:
+(1st and 15th of the month), one script per slot so they never overlap, and
+only run when a file has actually changed:
 
 | Workflow | Checks (Nairobi) | Watches | Runs |
 |---|---|---|---|
-| `cbk-debt-watch.yml` | 1st & 15th, 08:02 | Public Debt CSV | `df_debt.R` |
-| `cbk-indicators.yml` | 1st & 15th, 08:12 | Monthly exchange rate CSV; daily rate on the CBK home page | `df_forex.R` |
-| | | Revenue and Expenditure CSV; Public Debt CSV | `df_wacd.R` |
-| | | Revenue and Expenditure CSV | `df_finance.R` |
+| `cbk-debt-watch.yml` | 1st & 15th, 09:02 | Public Debt CSV | `df_debt.R` |
+| `cbk-indicators.yml` | 1st & 15th, 09:17 | Monthly exchange rate CSV; daily rate on the CBK home page | `df_forex.R` |
+| `cbk-indicators.yml` | 1st & 15th, 09:32 | Revenue and Expenditure CSV; Public Debt CSV | `df_wacd.R` |
+| `cbk-indicators.yml` | 1st & 15th, 09:47 | Revenue and Expenditure CSV | `df_finance.R` |
 
 `watch/check_cbk.sh <name> <link-pattern> [page]` finds the current link on the
 CBK page (the numeric prefix changes with every upload), downloads the file and

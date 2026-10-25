@@ -1,7 +1,12 @@
 name: CBK indicators (forex, interest, revenue & expenditure)
 
-# Checks CBK every two weeks -- on the 1st and 15th of each month at 08:12
-# Nairobi (05:12 UTC) -- and runs
+# Checks CBK every two weeks, on the 1st and 15th of each month, one script per
+# slot so they never run at the same time (Nairobi time; UTC is 3 hours earlier):
+#   09:02  Public debt (separate workflow, cbk-debt-watch.yml)
+#   09:17  df_forex.R
+#   09:32  df_wacd.R   (after the debt update, which it depends on)
+#   09:47  df_finance.R
+# Each slot runs
 # each script ONLY when one of its CBK inputs has changed since that script
 # last ran successfully:
 #
@@ -20,11 +25,18 @@ name: CBK indicators (forex, interest, revenue & expenditure)
 #   dry_run  calculate and report only, don't write to Supabase (default on)
 on:
   schedule:
-    - cron: "12 5 1,15 * *"
+    - cron: "17 6 1,15 * *"   # df_forex.R
+    - cron: "32 6 1,15 * *"   # df_wacd.R
+    - cron: "47 6 1,15 * *"   # df_finance.R
   workflow_dispatch:
     inputs:
+      script:
+        description: "Which script to check and run"
+        type: choice
+        options: [all, forex, wacd, finance]
+        default: all
       force:
-        description: "Run all three scripts even if no CBK file has changed"
+        description: "Run it even if no CBK file has changed"
         type: boolean
         default: false
       dry_run:
@@ -50,6 +62,8 @@ jobs:
       # Scheduled runs write; manual runs follow the dry_run box.
       DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
       FORCE: ${{ github.event_name == 'workflow_dispatch' && inputs.force || 'false' }}
+      SCHEDULE: ${{ github.event.schedule }}
+      SCRIPT_INPUT: ${{ inputs.script }}
       FX_PAGE: https://www.centralbank.go.ke/statistics/exchange-rates/
       RE_PATTERN: 'Revenue(%20| )and(%20| )Expenditure\.csv'
       DEBT_PATTERN: 'Public(%20| )Debt\.csv'
@@ -87,6 +101,21 @@ jobs:
           { [ "$wacd_re" = true ] || [ "$wacd_debt" = true ]; } && wacd=true
           [ "$fin_re" = true ] && finance=true
           if [ "$FORCE" = true ]; then forex=true; wacd=true; finance=true; fi
+
+          # One script per scheduled slot; manual runs follow the "script" input.
+          case "$SCHEDULE" in
+            "17 6 1,15 * *") only=forex ;;
+            "32 6 1,15 * *") only=wacd ;;
+            "47 6 1,15 * *") only=finance ;;
+            *) only="${SCRIPT_INPUT:-all}" ;;
+          esac
+          [ "$only" = all ] || [ "$only" = forex ]   || forex=false
+          [ "$only" = all ] || [ "$only" = wacd ]    || wacd=false
+          [ "$only" = all ] || [ "$only" = finance ] || finance=false
+          # Keep only this slot's pending state files, so the others are re-checked in their own slot.
+          [ "$forex" = true ]   || rm -f watch/forex_monthly.state.new watch/forex_daily.state.new
+          [ "$wacd" = true ]    || rm -f watch/wacd_revenue_expenditure.state.new watch/wacd_public_debt.state.new
+          [ "$finance" = true ] || rm -f watch/finance_revenue_expenditure.state.new
           {
             echo "forex=$forex"; echo "wacd=$wacd"; echo "finance=$finance"
             if [ "$forex$wacd$finance" != falsefalsefalse ]; then echo "any=true"; else echo "any=false"; fi
@@ -98,7 +127,7 @@ jobs:
             echo "| df_forex.R | $forex | monthly file changed: $fx_monthly; new daily rate: $fx_daily (posted ${posted:-?}) |"
             echo "| df_wacd.R | $wacd | Revenue & Expenditure changed: $wacd_re; Public Debt changed: $wacd_debt |"
             echo "| df_finance.R | $finance | Revenue & Expenditure changed: $fin_re |"
-            echo "Force: $FORCE · Dry run: $DRY_RUN"
+            echo "Slot: $only · Force: $FORCE · Dry run: $DRY_RUN"
           } >> "$GITHUB_STEP_SUMMARY"
 
       # --- Run only what changed ---------------------------------------------
