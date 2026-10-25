@@ -7,13 +7,13 @@
 //   DRY_RUN=true node collect.mjs    fetch and print, write nothing
 //
 // Env: VERCEL_TOKEN (read access), VERCEL_PROJECT (default kenyadebtcounter),
-//      VERCEL_TEAM (team slug, default my-duka), SUPABASE_URL, SUPABASE_SERVICE_ROLE.
+//      VERCEL_TEAM (team slug, default iea-kenya), SUPABASE_URL, SUPABASE_SERVICE_ROLE.
 // Days are UTC days, as Vercel reports them.
 
 const env = (k, d = "") => (process.env[k] ?? d).trim();
 const TOKEN = env("VERCEL_TOKEN");
 const PROJECT = env("VERCEL_PROJECT", "kenyadebtcounter");
-const TEAM = env("VERCEL_TEAM", "my-duka");
+const TEAM = env("VERCEL_TEAM", "iea-kenya");
 const SB_URL = env("SUPABASE_URL").replace(/\/+$/, "");
 const SB_KEY = env("SUPABASE_SERVICE_ROLE");
 const DAYS = Math.max(1, Math.min(400, Number(env("DAYS", "3")) || 3));

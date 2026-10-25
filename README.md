@@ -63,7 +63,7 @@ Settings → Secrets and variables → Actions:
   bypasses RLS). Verify any candidate key first with
   `scripts/check-supabase-key.sh` before pasting it here (script lives
   alongside this project, not in this repo).
-- `VERCEL_TOKEN` — a Vercel access token that can read the `my-duka` team
+- `VERCEL_TOKEN` — a Vercel access token that can read the `iea-kenya` team
   (Vercel → Account Settings → Tokens; scope it to that team). Used only by the
   readership workflow.
 - `GSHEET_SERVICE_ACCOUNT` — base64-encoded service-account JSON

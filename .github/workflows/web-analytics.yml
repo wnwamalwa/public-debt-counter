@@ -50,7 +50,7 @@ jobs:
     env:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
       VERCEL_PROJECT: kenyadebtcounter
-      VERCEL_TEAM: my-duka
+      VERCEL_TEAM: iea-kenya
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
     steps:
