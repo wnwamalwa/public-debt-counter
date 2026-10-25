@@ -67,6 +67,7 @@ with bounds as (
 m as (
   select date_trunc('month', date)::date as month, sum(pageviews)::bigint as pageviews, sum(visitors)::bigint as visitors
   from public.web_daily group by 1
+  having sum(pageviews) > 0          -- ignore months fetched before tracking began
 ),
 last_full as (
   select m.* from m, bounds where m.month < bounds.this_month order by m.month desc limit 1
@@ -82,7 +83,7 @@ select
   null::numeric                                                                               as clicks_per_visitor,
   null::numeric                                                                               as downloads_per_visitor,
   null::numeric                                                                               as avg_duration,
-  (select min(date) from public.web_daily)                                                    as first_date,
+  (select min(date) from public.web_daily where pageviews > 0)                                as first_date,
   (select max(date) from public.web_daily where pageviews > 0)                                as last_date,
   (select m.visitors from m, bounds where m.month = bounds.this_month)                        as readers_this_month,
   (select month from last_full)                                                               as last_full_month,
