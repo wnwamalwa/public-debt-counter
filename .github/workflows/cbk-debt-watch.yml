@@ -55,6 +55,7 @@ jobs:
             any::readr
             any::httr
             any::jsonlite
+            any::googlesheets4
 
       - name: Update Supabase (df_debt.R)
         if: steps.check.outputs.changed == 'true' || inputs.force
@@ -62,6 +63,24 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
         run: Rscript df_debt.R
+
+      # A fresh CBK Weekly Bulletin row (debt_bulletin sheet) is more current
+      # than the monthly file, so re-apply it straight after df_debt.R. If there
+      # is none (or it is older than 4 weeks) this writes nothing and the
+      # monthly figures stand. Never fails the monthly update.
+      - name: Re-apply the latest weekly bulletin (df_debt_bulletin.R)
+        if: steps.check.outputs.changed == 'true' || inputs.force
+        continue-on-error: true
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          FORCE: "true"
+          STATE_FILE: /tmp/debt_bulletin.applied
+        run: |
+          echo "${{ secrets.GSHEET_SERVICE_ACCOUNT }}" | base64 --decode > gsheets.json
+          status=0; Rscript df_debt_bulletin.R || status=$?
+          rm -f gsheets.json
+          exit $status
 
       # Only remember the new file once Supabase was updated successfully, so a
       # failed run is retried next week (and GitHub emails you about the failure).

@@ -6,10 +6,17 @@
 #   1. Downloads CBK's monthly Public Debt series (domestic, external, total)
 #   2. Validates it (columns, freshness, plausible values)
 #   3. Fills gaps between months (linear interpolation)
-#   4. Forecasts TOTAL debt to next month (auto.arima), then splits it into
-#      domestic/external using CBK's latest actual proportion
+#   4. Forecasts TOTAL debt to the end of this month (auto.arima), then splits
+#      it into domestic/external using CBK's latest actual proportion
 #   5. Works out growth per second for this month and the value right now,
 #      with a sanity check against the last 12 months' actual trend
+#
+# Timing: CBK's figure for a month is the stock AT THE END of that month (the
+# Treasury's August 2022 bulletin: "as at end of August 2022 ... Kshs. 8,663.20
+# billion"; CBK's August 2022 row is 8,663.20 bn). Rows are stored with the 1st
+# of the month as their date (so "2022-08-01" = August 2022 = end of August).
+# The live value therefore starts each month from LAST month's figure (the
+# stock on the 1st) and climbs to THIS month's figure by the month's end.
 #   6. Uploads to Supabase:
 #        df_debt_historical        full monthly series (actual / interpolated / forecast)
 #        df_debt_current           one new row: current debt levels
@@ -238,7 +245,7 @@ if (data_age > WARN_DATA_AGE_MONTHS) {
 }
 
 # ------------------------------------------------------------
-# 3. FILL GAPS + 4. FORECAST TOTAL DEBT TO NEXT MONTH
+# 3. FILL GAPS + 4. FORECAST TOTAL DEBT TO THE END OF THIS MONTH
 # ------------------------------------------------------------
 # Only the TOTAL is forecast. Domestic and external are then split out of that
 # total using the latest ACTUAL domestic:external proportion from CBK, so the
@@ -255,7 +262,8 @@ share_ext <- 1 - share_dom
 log_msg(sprintf("Actual split at %s: domestic %.1f%%, external %.1f%%",
                 format(last_actual, "%b %Y"), 100 * share_dom, 100 * share_ext))
 
-h <- interval(last_actual, next_month) %/% months(1)
+# Forecast up to this month's row (the stock at the end of this month).
+h <- interval(last_actual, this_month) %/% months(1)
 
 if (h > 0) {
   log_msg("Forecasting total debt ", h, " month(s) ahead with auto.arima ...")
@@ -283,15 +291,17 @@ row_for <- function(d) {
   if (nrow(r) != 1) stop("No value for ", format(d, "%b %Y"), " in the series.", call. = FALSE)
   r
 }
-cur <- row_for(this_month)
-nxt <- row_for(next_month)
+# Start of this month = end of last month (last month's row);
+# end of this month = this month's row.
+month_start <- row_for(this_month %m-% months(1))
+month_end   <- row_for(this_month)
 
 secs_in_month <- as.numeric(difftime(force_tz(as_datetime(next_month), TZ),
                                      force_tz(as_datetime(this_month), TZ), units = "secs"))
 secs_elapsed  <- as.numeric(difftime(now_time, force_tz(as_datetime(this_month), TZ), units = "secs"))
 
-# Growth in TOTAL debt per second: this month -> next month.
-gps_arima_ttl <- (nxt$debt_ttl - cur$debt_ttl) / secs_in_month
+# Growth in TOTAL debt per second over this month: end of last month -> end of this month.
+gps_arima_ttl <- (month_end$debt_ttl - month_start$debt_ttl) / secs_in_month
 
 # Sanity check against the last TREND_MONTHS of ACTUAL total debt.
 recent    <- monthly %>% filter(source == "actual") %>% tail(TREND_MONTHS + 1)
@@ -315,7 +325,7 @@ if (plausible) {
 
 # Split total growth and the current total using the latest actual proportion.
 gps <- c(debt_dom = gps_ttl * share_dom, debt_ext = gps_ttl * share_ext)
-current_ttl <- cur$debt_ttl + gps_ttl * secs_elapsed
+current_ttl <- month_start$debt_ttl + gps_ttl * secs_elapsed
 current <- c(debt_dom = current_ttl * share_dom, debt_ext = current_ttl * share_ext)
 
 # ------------------------------------------------------------
@@ -325,7 +335,7 @@ current <- c(debt_dom = current_ttl * share_dom, debt_ext = current_ttl * share_
 stamp <- sub("(\\d{2})(\\d{2})$", "\\1:\\2", format(now_time, "%Y-%m-%dT%H:%M:%S%z"))  # +03:00
 
 df_debt_upload <- series %>%
-  filter(date <= next_month) %>%
+  filter(date <= this_month) %>%
   transmute(date = format(date, "%Y-%m-%d"), debt_dom, debt_ext, debt_ttl, source) %>%
   bind_rows(tibble(date = format(as_date(now_time), "%Y-%m-%d"),
                    debt_dom = current[["debt_dom"]], debt_ext = current[["debt_ext"]],

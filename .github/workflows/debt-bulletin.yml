@@ -1,0 +1,170 @@
+name: CBK weekly bulletin (alert + counter update)
+
+# Two jobs:
+#   alert    every 3 hours: checks CBK for a new Weekly Bulletin PDF and for a
+#            new Public Debt file, whichever comes first, and opens a GitHub
+#            issue (GitHub emails it to you) with the links and what to enter
+#            in the "debt_bulletin" tab of the IEA Kenya Google Sheet.
+#   counter  08:53, 13:53 and 18:53 Nairobi, and whenever run by hand: reads
+#            the newest row of that tab and updates the live counter
+#            (df_debt_bulletin.R). After entering a new row, run this
+#            workflow by hand (Actions -> this workflow -> Run workflow) to
+#            update the counter straight away.
+on:
+  schedule:
+    - cron: "41 */3 * * *"        # alert
+    - cron: "53 5,10,15 * * *"    # counter (UTC = 08:53, 13:53, 18:53 Nairobi)
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Counter: only show what it would write"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write   # to commit the watch/ state files
+  issues: write     # alerts, and an issue when a scheduled run fails
+
+concurrency:
+  group: debt-bulletin
+  cancel-in-progress: false
+
+jobs:
+  alert:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '41 */3 * * *'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Check CBK for a new weekly bulletin
+        id: bulletin
+        run: bash watch/check_bulletin.sh
+
+      - name: Check CBK for a new Public Debt file
+        id: debtcsv
+        run: bash watch/check_cbk.sh public_debt_alert 'Public(%20| )Debt\.csv'
+
+      - name: Send the alert
+        if: steps.bulletin.outputs.changed == 'true' || steps.debtcsv.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LINKS: ${{ steps.bulletin.outputs.links }}
+          CSV_CHANGED: ${{ steps.debtcsv.outputs.changed }}
+          CSV_URL: ${{ steps.debtcsv.outputs.url }}
+          CSV_LATEST: ${{ steps.debtcsv.outputs.latest }}
+        run: |
+          sheet="https://docs.google.com/spreadsheets/d/11Y_EoYqFJOTTubbBCQkh1gV3kbX1cVQHapdzbwWUXK4/edit"
+          run_url="${{ github.server_url }}/${{ github.repository }}/actions/workflows/debt-bulletin.yml"
+          {
+            echo "New CBK debt figures are out."
+            echo
+            if [ -n "$LINKS" ]; then
+              echo "**Weekly Bulletin:**"; printf '%s\n' "$LINKS" | sed 's/^/- /'; echo
+            fi
+            if [ "$CSV_CHANGED" = "true" ]; then
+              echo "**Public Debt file (monthly):** $CSV_URL (latest year,month: $CSV_LATEST)"; echo
+            fi
+            echo "**What to do (about 5 minutes):**"
+            echo "1. Open the bulletin. In **Table 8 (Government Domestic Debt)** take the right-most gross domestic debt figure and its date. In **Table 11 (Public Debt)** take the last row's external debt in **US\$ billion** and its month."
+            echo "2. Add a new row at the bottom of the [debt_bulletin tab]($sheet): bulletin_date | domestic_bn | domestic_as_at | external_usd_bn | external_month | note (plain numbers, dates as YYYY-MM-DD)."
+            echo "3. Update the counter now: [Run workflow]($run_url) (or wait for the next run at 08:53, 13:53 or 18:53)."
+            echo
+            echo "Close this issue once the row is in."
+          } > body.md
+          gh issue create --repo "${{ github.repository }}" \
+            --title "New CBK debt figures ($(TZ=Africa/Nairobi date '+%d %b %Y')): update the debt_bulletin sheet" \
+            --body-file body.md --assignee "${{ github.repository_owner }}" \
+          || gh issue create --repo "${{ github.repository }}" \
+            --title "New CBK debt figures ($(TZ=Africa/Nairobi date '+%d %b %Y')): update the debt_bulletin sheet" \
+            --body-file body.md
+
+      - name: Remember what has been seen
+        run: |
+          changed=0
+          for f in weekly_bulletin.seen public_debt_alert.state; do
+            if [ -f "watch/$f.new" ]; then mv "watch/$f.new" "watch/$f"; git add "watch/$f"; changed=1; fi
+          done
+          if [ "$changed" = 1 ] && ! git diff --cached --quiet; then
+            git config user.name  "cbk-watch-bot"
+            git config user.email "actions@users.noreply.github.com"
+            git commit -m "CBK bulletin watch: new figures seen"
+            git pull --rebase && git push
+          fi
+
+      - name: Open an issue if this run failed
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="Scheduled run failed: ${{ github.workflow }} (alert)"
+          url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          existing=$(gh issue list --repo "${{ github.repository }}" --state open --search "in:title \"$title\"" --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "${{ github.repository }}" --body "Failed again on $(date -u '+%Y-%m-%d %H:%M UTC'): $url"
+          else
+            gh issue create --repo "${{ github.repository }}" --title "$title" \
+              --body "The scheduled run on $(date -u '+%Y-%m-%d %H:%M UTC') failed: $url. Close this issue once it is fixed."
+          fi
+
+  counter:
+    needs: alert
+    # run even when the alert job was skipped (the counter schedule) or failed
+    if: always() && (github.event_name == 'workflow_dispatch' || github.event.schedule == '53 5,10,15 * * *')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          packages: |
+            any::dplyr
+            any::lubridate
+            any::httr
+            any::jsonlite
+            any::googlesheets4
+
+      - name: Write Google Sheets service account to file
+        run: echo "${{ secrets.GSHEET_SERVICE_ACCOUNT }}" | base64 --decode > gsheets.json
+
+      - name: Update the counter from the newest bulletin row
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+          FORCE: ${{ github.event_name == 'workflow_dispatch' && 'true' || 'false' }}
+        run: Rscript df_debt_bulletin.R
+
+      - name: Remove credentials
+        if: always()
+        run: rm -f gsheets.json
+
+      - name: Remember what was applied
+        run: |
+          if [ -f watch/debt_bulletin.applied ] && [ -n "$(git status --porcelain watch/debt_bulletin.applied)" ]; then
+            git config user.name  "cbk-watch-bot"
+            git config user.email "actions@users.noreply.github.com"
+            git add watch/debt_bulletin.applied
+            git commit -m "Counter updated from the weekly bulletin"
+            git pull --rebase && git push
+          fi
+
+      - name: Open an issue if this run failed
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="Scheduled run failed: ${{ github.workflow }} (counter)"
+          url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          existing=$(gh issue list --repo "${{ github.repository }}" --state open --search "in:title \"$title\"" --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "${{ github.repository }}" --body "Failed again on $(date -u '+%Y-%m-%d %H:%M UTC'): $url"
+          else
+            gh issue create --repo "${{ github.repository }}" --title "$title" \
+              --body "The scheduled run on $(date -u '+%Y-%m-%d %H:%M UTC') failed: $url. Usually a row in the debt_bulletin sheet was rejected; the run log says which and why. The counter keeps its previous figures until it is fixed. Close this issue once it is fixed."
+          fi
