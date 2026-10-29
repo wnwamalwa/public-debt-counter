@@ -128,6 +128,7 @@ jobs:
             any::httr
             any::jsonlite
             any::googlesheets4
+            any::rvest
 
       - name: Write Google Sheets service account to file
         run: echo "${{ secrets.GSHEET_SERVICE_ACCOUNT }}" | base64 --decode > gsheets.json
