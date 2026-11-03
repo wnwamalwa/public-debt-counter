@@ -1,0 +1,43 @@
+name: Methodology PDF
+
+# Every day at 06:47 Nairobi time (03:47 UTC), print the site's Methodology
+# page to PDF and put it in Supabase Storage
+# (reports/methodology/kenya-debt-counter-methodology.pdf), which the page's
+# "Download PDF" card links to. Run it by hand after changing the page.
+# Needs SUPABASE_URL and SUPABASE_SERVICE_ROLE (already set).
+on:
+  schedule:
+    - cron: "47 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: methodology-pdf
+  cancel-in-progress: true
+
+env:
+  TZ: Africa/Nairobi
+
+jobs:
+  pdf:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web-analytics
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web-analytics/package-lock.json
+      - name: Install
+        run: npm ci --no-audit --no-fund
+      - name: Print the Methodology page to PDF and upload it
+        run: node methodology-pdf.mjs --upload
