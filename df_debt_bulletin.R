@@ -12,14 +12,21 @@
 #      previous row) so a typo never reaches the counter.
 #   3. Works out the debt right now:
 #        domestic = latest weekly figure + domestic growth × time since its date
-#        external = US$ figure × TODAY's CBK KSh/US$ rate (read from the CBK
-#                   home page on every run; df_forex as a fallback)
-#                   + external growth × time since the end of its month
+#        external = US$ figure × cross-currency factor × TODAY's CBK KSh/US$
+#                   rate (read from the CBK home page on every run; df_forex
+#                   as a fallback) + external growth × time since its month
+#      The cross-currency factor revalues the euro, yuan, yen and sterling
+#      parts of the external debt (Treasury's currency shares) from the end
+#      of the bulletin's month to today (ECB reference rates, Frankfurter API).
 #      Growth rates come from the bulletin rows themselves once they cover
 #      8+ weeks, otherwise from the last 12 months of CBK actuals
-#      (df_debt_historical), and are checked against the budget deficit of
-#      the last 12 months (df_finance): within 0.5-2x the deficit pace the
-#      observed trend is used; outside it, the deficit pace.
+#      (df_debt_historical). External growth is measured at a constant
+#      exchange rate (US$ change × today's rate), so currency moves are not
+#      counted twice. The pace is checked against the underlying pace of the
+#      last 12 months = budget deficit + other adjustments (cash balances,
+#      debt taken over, arrears...), i.e. the 12-month change in debt at a
+#      constant exchange rate: within 0.5-2x it, the observed trend is used;
+#      outside it, the underlying pace.
 #   4. Adds a row to df_debt_current and df_debt_growth_per_sec (the two
 #      tables the website ticks the counter from), unless nothing changed
 #      since the last run.
@@ -29,8 +36,9 @@
 #
 # Run: Rscript df_debt_bulletin.R        (DRY_RUN=true to print only)
 #      FORCE=true                        write even if nothing changed
-# Testing without Google/Supabase: BULLETIN_CSV, HISTORY_CSV, FINANCE_CSV, FX_VALUE
-# (or FX_HTML_FILE, a saved CBK home page).
+# Testing without Google/Supabase: BULLETIN_CSV, HISTORY_CSV, FINANCE_CSV, FOREX_CSV,
+# FX_VALUE (or FX_HTML_FILE, a saved CBK home page), CROSS_FX_THEN and CROSS_FX_NOW
+# (e.g. "EUR=0.92,CNY=7.1,JPY=150,GBP=0.78", units per US$), CROSS_FX=off.
 # Scheduled: .github/workflows/debt-bulletin.yml (every 3 hours), and right
 # after df_debt.R in cbk-debt-watch.yml so a fresh bulletin always wins.
 # ============================================================
@@ -51,6 +59,12 @@ STALE_DAYS <- 28          # newest domestic figure older than this: leave the co
 MAX_WEEKLY_CHANGE <- 0.05 # domestic may not move more than 5% from the previous row
 MAX_USD_CHANGE    <- 0.10 # external US$ may not move more than 10% from the previous row
 TREND_MONTHS      <- 12
+# Currency composition of external debt (share of the US$ total). Source:
+# National Treasury, Public Debt Bulletin, December 2025, section 3.1
+# (USD 53.0%, EUR 27.3%, CNY 12.2%, JPY 4.9%, GBP 2.5%, others 0.2% counted
+# with USD). Update when the Treasury publishes a new composition, or set
+# CURRENCY_SHARES="USD=0.53,EUR=0.273,...".
+CURRENCY_SHARES <- c(USD = 0.532, EUR = 0.273, CNY = 0.122, JPY = 0.049, GBP = 0.025)
 STATE_FILE <- Sys.getenv("STATE_FILE", "watch/debt_bulletin.applied")
 
 `%||%` <- function(a, b) if (is.null(a)) b else a
@@ -218,6 +232,52 @@ fx <- if (nzchar(Sys.getenv("FX_VALUE"))) {
 if (!isTRUE(fx$value > 50 && fx$value < 500)) fail("Implausible KSh/US$ rate ", fx$value, " in df_forex.")
 if (as.numeric(today - fx$date) > 14) warning("Exchange rate is from ", fx$date, " (more than two weeks old).", call. = FALSE)
 
+# Cross-currency factor: the bulletin gives external debt in US$ at the end
+# of its month. Since then the euro, yuan, yen and sterling have moved
+# against the dollar, which changes the US$ value of debt owed in them.
+#   factor = sum over currencies of share x (units per US$ then / units per US$ now)
+# Rates: ECB reference rates via the Frankfurter API (no key). If they can't
+# be read, the factor is 1 (US$ figure unchanged), as before.
+parse_rates <- function(x) {
+  kv <- strsplit(trimws(strsplit(x, ",")[[1]]), "=")
+  setNames(as.numeric(vapply(kv, `[`, "", 2)), vapply(kv, `[`, "", 1))
+}
+if (nzchar(Sys.getenv("CURRENCY_SHARES"))) CURRENCY_SHARES <- parse_rates(Sys.getenv("CURRENCY_SHARES"))
+CURRENCY_SHARES <- CURRENCY_SHARES / sum(CURRENCY_SHARES)
+frankfurter <- function(day) {
+  syms <- setdiff(names(CURRENCY_SHARES), "USD")
+  urls <- c(sprintf("https://api.frankfurter.dev/v1/%s?base=USD&symbols=%s", day, paste(syms, collapse = ",")),
+            sprintf("https://api.frankfurter.app/%s?from=USD&to=%s", day, paste(syms, collapse = ",")))
+  for (u in urls) {
+    r <- tryCatch(GET(u, timeout(30)), error = function(e) NULL)
+    if (!is.null(r) && !http_error(r)) {
+      j <- fromJSON(content(r, as = "text", encoding = "UTF-8"))
+      v <- unlist(j$rates)
+      if (all(syms %in% names(v))) return(list(rates = v[syms], date = as_date(j$date)))
+    }
+  }
+  NULL
+}
+cross_fx <- function() {
+  one <- list(factor = 1, note = "not applied")
+  if (tolower(Sys.getenv("CROSS_FX")) %in% c("off", "false", "0")) return(one)
+  month_end <- (latest$external_month %m+% months(1)) - 1
+  then <- if (nzchar(Sys.getenv("CROSS_FX_THEN"))) list(rates = parse_rates(Sys.getenv("CROSS_FX_THEN")), date = month_end) else
+    frankfurter(format(month_end))
+  now_r <- if (nzchar(Sys.getenv("CROSS_FX_NOW"))) list(rates = parse_rates(Sys.getenv("CROSS_FX_NOW")), date = today) else
+    frankfurter("latest")
+  if (is.null(then) || is.null(now_r)) { log_msg("Cross-currency rates unavailable; US$ figure used as is."); return(one) }
+  syms <- setdiff(names(CURRENCY_SHARES), "USD")
+  rel <- then$rates[syms] / now_r$rates[syms]
+  if (anyNA(rel)) { log_msg("Cross-currency rates incomplete; US$ figure used as is."); return(one) }
+  f <- unname(CURRENCY_SHARES["USD"] %||% 0) + sum(CURRENCY_SHARES[syms] * rel)
+  if (!isTRUE(f > 0.85 && f < 1.15)) { log_msg(sprintf("Cross-currency factor %.4f implausible; not applied.", f)); return(one) }
+  list(factor = f, note = sprintf("%.4f (%s to %s; %s)", f, format(then$date), format(now_r$date),
+                                  paste(sprintf("%s %+.1f%%", syms, 100 * (rel - 1)), collapse = ", ")))
+}
+xfx <- cross_fx()
+ext_usd_now <- latest$external_usd * xfx$factor
+
 hist <- if (nzchar(Sys.getenv("HISTORY_CSV"))) read.csv(Sys.getenv("HISTORY_CSV")) else
   sb_get("df_debt_historical", list(select = "date,debt_dom,debt_ext,source", source = "eq.actual",
                                     order = "date.asc", limit = 1000))
@@ -228,6 +288,29 @@ span <- as.numeric(difftime(max(recent$date), min(recent$date), units = "secs"))
 gps_ext <- (last(recent$debt_ext) - first(recent$debt_ext)) / span
 gps_dom <- (last(recent$debt_dom) - first(recent$debt_dom)) / span
 dom_basis <- sprintf("%d-month CBK trend", TREND_MONTHS)
+# External growth at a CONSTANT exchange rate: the shilling's effect is
+# already in the external LEVEL (today's rate), so the growth rate should
+# count only new borrowing net of repayments. Convert each month's KSh
+# figure to US$ with CBK's end-month rate (df_forex), take the change in
+# US$, and value it at today's rate. Falls back to the KSh trend if the
+# monthly rates are missing.
+ext_basis <- "KSh trend (includes exchange-rate moves)"
+forex <- tryCatch({
+  r <- if (nzchar(Sys.getenv("FOREX_CSV"))) read.csv(Sys.getenv("FOREX_CSV")) else
+    sb_get("df_forex", list(select = "date,value,source", order = "date.asc", limit = 2000))
+  if (!"source" %in% names(r)) r$source <- "Actual"
+  r %>% mutate(date = floor_date(as_date(substr(date, 1, 10)), "month"), value = as.numeric(value),
+               actual = tolower(source) == "actual") %>%
+    arrange(date, desc(actual)) %>% distinct(date, .keep_all = TRUE)
+}, error = function(e) { log_msg("df_forex unavailable (", conditionMessage(e), ")."); NULL })
+fx_first <- forex$value[match(floor_date(first(recent$date), "month"), forex$date)]
+fx_last  <- forex$value[match(floor_date(last(recent$date), "month"), forex$date)]
+if (length(fx_first) && length(fx_last) && isTRUE(fx_first > 50 && fx_first < 500 && fx_last > 50 && fx_last < 500)) {
+  usd_change <- last(recent$debt_ext) / fx_last - first(recent$debt_ext) / fx_first
+  gps_ext <- usd_change * fx$value / span
+  ext_basis <- sprintf("US$ change over %d months x today's rate", TREND_MONTHS)
+}
+gps_underlying <- gps_dom + gps_ext   # 12-month change in debt at a constant exchange rate
 # Once the bulletin rows cover 8+ weeks, use their own (more current) domestic pace.
 wk <- b %>% filter(!is.na(domestic), domestic_as_at >= latest$domestic_as_at - 182) %>% distinct(domestic_as_at, .keep_all = TRUE)
 if (nrow(wk) >= 2 && as.numeric(max(wk$domestic_as_at) - min(wk$domestic_as_at)) >= 56) {
@@ -260,22 +343,35 @@ deficit_12m <- function() {
 }
 gps_trend <- gps_dom + gps_ext
 growth_basis <- "observed trend"
+share_dom <- latest$domestic / (latest$domestic + ext_usd_now * fx$value)
+set_pace <- function(gps) { gps_dom <<- gps * share_dom; gps_ext <<- gps * (1 - share_dom) }
 def <- tryCatch(deficit_12m(), error = function(e) { log_msg("Deficit unavailable (", conditionMessage(e), ")."); NULL })
 if (!is.null(def)) {
   gps_deficit <- def$value / (365.25 * 86400)
-  ratio <- gps_trend / gps_deficit
-  if (isTRUE(ratio >= 0.5 && ratio <= 2)) {
-    growth_basis <- sprintf("observed trend (%.2fx the deficit pace: consistent)", ratio)
+  # Underlying pace = deficit + other adjustments (cash balances, debt taken
+  # over, arrears, loans outside the budget) = the 12-month change in debt at
+  # a constant exchange rate. Used as the benchmark when it is close enough to
+  # the deficit (0.5-2.5x); otherwise the deficit itself is the benchmark.
+  adj <- (gps_underlying - gps_deficit) * 365.25 * 86400
+  u_ratio <- gps_underlying / gps_deficit
+  if (isTRUE(u_ratio >= 0.5 && u_ratio <= 2.5)) {
+    gps_bench <- gps_underlying; bench_name <- "underlying pace (deficit + other adjustments)"
   } else {
-    # Far from the deficit pace (a one-off loan, a revaluation...): grow at the
-    # deficit pace instead, split between domestic and external as the debt is.
-    share_dom <- latest$domestic / (latest$domestic + latest$external_usd * fx$value)
-    gps_dom <- gps_deficit * share_dom
-    gps_ext <- gps_deficit * (1 - share_dom)
-    growth_basis <- sprintf("budget deficit pace (observed trend was %.2fx it, outside 0.5-2x)", ratio)
+    gps_bench <- gps_deficit; bench_name <- sprintf("deficit pace (underlying pace was %.2fx it)", u_ratio)
+  }
+  ratio <- gps_trend / gps_bench
+  if (isTRUE(ratio >= 0.5 && ratio <= 2)) {
+    growth_basis <- sprintf("observed trend (%.2fx the %s: consistent)", ratio, bench_name)
+  } else {
+    # Far from the benchmark (a one-off loan, a lumpy repayment...): grow at the
+    # benchmark pace instead, split between domestic and external as the debt is.
+    set_pace(gps_bench)
+    growth_basis <- sprintf("%s (observed trend was %.2fx it, outside 0.5-2x)", bench_name, ratio)
   }
   cat(sprintf("Deficit, 12 months to %s: KSh %s bn = KSh %s/sec\n", format(def$to, "%b %Y"), bn(def$value),
               format(round(gps_deficit), big.mark = ",")))
+  cat(sprintf("Other adjustments, 12 months: KSh %s bn (underlying pace KSh %s/sec = %.2fx the deficit)\n",
+              bn(adj), format(round(gps_underlying), big.mark = ","), u_ratio))
 } else {
   log_msg("No deficit figures; growth from the observed trend only.")
 }
@@ -288,7 +384,7 @@ dom_from <- force_tz(as_datetime(latest$domestic_as_at + 1), TZ)                
 ext_from <- force_tz(as_datetime(latest$external_month %m+% months(1)), TZ)      # end of that month
 secs <- function(from) max(0, as.numeric(difftime(now_time, from, units = "secs")))
 debt_dom <- latest$domestic + gps_dom * secs(dom_from)
-debt_ext <- latest$external_usd * fx$value + gps_ext * secs(ext_from)
+debt_ext <- ext_usd_now * fx$value + gps_ext * secs(ext_from)
 debt_ttl <- debt_dom + debt_ext
 gps_ttl  <- gps_dom + gps_ext
 
@@ -300,7 +396,7 @@ if (isTRUE(abs(debt_ttl / last_actual_ttl - 1) > 0.15))
 
 stamp <- sub("(\\d{2})(\\d{2})$", "\\1:\\2", format(now_time, "%Y-%m-%dT%H:%M:%S%z"))
 signature <- paste(latest$bulletin_date, latest$domestic, latest$domestic_as_at, latest$external_usd,
-                   latest$external_month, fx$value, fx$date, sep = "|")
+                   latest$external_month, fx$value, fx$date, round(xfx$factor, 4), sep = "|")
 unchanged <- file.exists(STATE_FILE) && identical(readLines(STATE_FILE, warn = FALSE)[1], signature)
 
 cat("\n============ WEEKLY BULLETIN NOWCAST ============\n")
@@ -312,6 +408,7 @@ cat("External          : US$", bn(latest$external_usd), "bn (", format(latest$ex
 cat("Total now         :", bn(debt_ttl), "bn  (last CBK monthly:", bn(last_actual_ttl), "bn)\n")
 cat("Growth per second : KSh", round(gps_ttl), "(domestic", round(gps_dom), "; external", round(gps_ext), ")\n")
 cat("Growth basis      :", growth_basis, "| domestic trend from", dom_basis, "\n")
+cat("Cross-currency    :", xfx$note, "| external growth:", ext_basis, "\n")
 cat("=================================================\n")
 
 if (DRY_RUN) { log_msg("DRY RUN - nothing written."); quit(save = "no", status = 0) }
