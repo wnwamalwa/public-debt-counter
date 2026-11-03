@@ -1,4 +1,4 @@
-name: New reports to enter in the sheet (OCOB, Treasury)
+name: New data to enter in the sheet (OCOB, Treasury, KNBS)
 
 # Every Monday at 09:07 Nairobi time (06:07 UTC), check for new:
 #   - Controller of Budget (OCOB) National Government Budget Implementation

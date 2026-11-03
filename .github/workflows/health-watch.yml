@@ -1,0 +1,69 @@
+name: Daily health check (alerts by email)
+
+# Every day at 15:07 Nairobi time (12:07 UTC): checks that every workflow's
+# last run worked, that the quarterly PDF report was rebuilt today, and that
+# the website's data routes answer. Any problem opens (or updates) one issue
+# labelled "health", assigned to the repository owner, so GitHub emails them;
+# the issue closes itself when everything is back to normal.
+# See watch/check_health.py.
+on:
+  schedule:
+    - cron: "7 12 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  actions: read
+
+concurrency:
+  group: health-watch
+  cancel-in-progress: false
+
+env:
+  TZ: Africa/Nairobi
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Check workflows, report and website
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 watch/check_health.py
+
+      - name: Open, update or close the health issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROBLEMS: ${{ steps.check.outputs.problems }}
+          SIG: ${{ steps.check.outputs.signature }}
+        run: |
+          set -euo pipefail
+          repo="${{ github.repository }}"
+          gh label create health --color D73A4A --description "Something that should update itself has stopped" --repo "$repo" 2>/dev/null || true
+          open=$(gh issue list --repo "$repo" --label health --state open --json number,body --jq '.[0] // empty')
+          num=$(echo "$open" | python3 -c "import json,sys; d=sys.stdin.read().strip(); print(json.loads(d)['number'] if d else '')")
+          oldsig=$(echo "$open" | python3 -c "import json,re,sys; d=sys.stdin.read().strip(); m=re.search(r'health-signature: (\w+)', json.loads(d)['body']) if d else None; print(m.group(1) if m else '')")
+          if [ "$PROBLEMS" = "true" ]; then
+            if [ -z "$num" ]; then
+              gh issue create --repo "$repo" --title "Kenya Debt Counter: something needs attention" \
+                --body-file watch/health.md --label health --assignee "${{ github.repository_owner }}"
+            elif [ "$oldsig" != "$SIG" ]; then
+              # Problems changed: update the list and comment, so the owner is emailed again.
+              gh issue edit "$num" --repo "$repo" --body-file watch/health.md
+              gh issue comment "$num" --repo "$repo" --body-file watch/health.md
+            else
+              echo "Same problems as already reported in #$num: no new email."
+              gh issue edit "$num" --repo "$repo" --body-file watch/health.md
+            fi
+          elif [ -n "$num" ]; then
+            gh issue comment "$num" --repo "$repo" --body-file watch/health.md
+            gh issue close "$num" --repo "$repo"
+          else
+            echo "All clear."
+          fi
+          cat watch/health.md >> "$GITHUB_STEP_SUMMARY"
