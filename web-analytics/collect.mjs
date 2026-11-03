@@ -8,7 +8,12 @@
 //
 // Env: VERCEL_TOKEN (read access), VERCEL_PROJECT (default kenyadebtcounter),
 //      VERCEL_TEAM (team slug, default iea-kenya), SUPABASE_URL, SUPABASE_SERVICE_ROLE.
-// Days are UTC days, as Vercel reports them.
+// Days are Nairobi days (EAT, UTC+3), the time zone used across the site: each
+// day runs from 21:00 UTC the evening before to 20:59:59 UTC. Vercel's own
+// "by day" totals use UTC days, so daily totals are added up from each day's
+// device breakdown instead (each visitor has one device type on a given day).
+// After switching to Nairobi days, run once with DAYS=31 to re-cut the history
+// Vercel still holds; older days stay as they were collected (UTC).
 
 const env = (k, d = "") => (process.env[k] ?? d).trim();
 const TOKEN = env("VERCEL_TOKEN");
@@ -67,21 +72,17 @@ async function vercel(path, params, { optional = false } = {}) {
   }
 }
 
-// --- which days -------------------------------------------------------------
-const today = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate()));
+// --- which days (Nairobi calendar days) ---------------------------------------
+const EAT_MS = 3 * 3600 * 1000; // Nairobi is UTC+3 all year (no daylight saving)
+const todayEat = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Nairobi", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+const todayMidnight = Date.parse(`${todayEat}T00:00:00.000Z`); // the date only, as a UTC timestamp
 const dates = [];
-for (let i = DAYS; i >= 1; i--) dates.push(iso(new Date(today.getTime() - i * 86400000)));
-const since = `${dates[0]}T00:00:00.000Z`;
-const until = `${dates[dates.length - 1]}T23:59:59.999Z`;
-
-// --- totals per day -----------------------------------------------------------
-const dayRows = await vercel("visits/aggregate", { since, until, by: "day", limit: 100 });
-const byDay = new Map(dayRows.map((r) => [String(r.timestamp ?? r.day).slice(0, 10), r]));
-const daily = dates.map((date) => ({
-  date,
-  pageviews: Number(byDay.get(date)?.pageviews) || 0,
-  visitors: Number(byDay.get(date)?.visitors) || 0,
-}));
+for (let i = DAYS; i >= 1; i--) dates.push(iso(new Date(todayMidnight - i * 86400000)));
+/** The UTC instants that bound a Nairobi day. */
+const dayWindow = (date) => ({
+  since: new Date(Date.parse(`${date}T00:00:00.000Z`) - EAT_MS).toISOString(),
+  until: new Date(Date.parse(`${date}T00:00:00.000Z`) + 86400000 - EAT_MS - 1).toISOString(),
+});
 
 // --- breakdowns per day (one query per day and dimension, top 100 + "Others") ---
 const breakdown = [];
@@ -89,8 +90,7 @@ for (const date of dates) {
   for (const [dim, [vDim, empty]] of Object.entries(DIMENSIONS)) {
     if (PLAN_LIMITED.has(vDim)) continue;
     const rows = await vercel("visits/aggregate", {
-      since: `${date}T00:00:00.000Z`,
-      until: `${date}T23:59:59.999Z`,
+      ...dayWindow(date),
       by: vDim,
       limit: 100,
     }, { optional: dim !== "page" && dim !== "country" });
@@ -108,6 +108,17 @@ for (const date of dates) {
     await sleep(120);
   }
 }
+
+// --- totals per Nairobi day, from the device breakdown (country if devices are unavailable) ---
+const totalsFrom = PLAN_LIMITED.has("deviceType") ? "country" : "device";
+const daily = dates.map((date) => {
+  const rows = breakdown.filter((r) => r.date === date && r.dimension === totalsFrom);
+  return {
+    date,
+    pageviews: rows.reduce((a, r) => a + r.pageviews, 0),
+    visitors: rows.reduce((a, r) => a + r.visitors, 0),
+  };
+});
 
 const tot = daily.reduce((a, d) => ({ pv: a.pv + d.pageviews, v: a.v + d.visitors }), { pv: 0, v: 0 });
 notice(`Vercel ${PROJECT}: ${dates[0]} to ${dates[dates.length - 1]} — ${tot.v} readers, ${tot.pv} page views, ${breakdown.length} breakdown rows.`);

@@ -20,6 +20,11 @@ concurrency:
   group: reports-watch
   cancel-in-progress: false
 
+# All dates and times in these scripts are Nairobi time (EAT), as on the site.
+# (Cron schedules above are still written in UTC: GitHub always reads them as UTC.)
+env:
+  TZ: Africa/Nairobi
+
 jobs:
   check:
     runs-on: ubuntu-24.04

@@ -27,7 +27,7 @@ const opt = (name, dflt) => {
   return i >= 0 && args[i + 1] && !args[i + 1].startsWith("--") ? args[i + 1] : dflt;
 };
 const flag = (name) => args.includes(`--${name}`);
-const lastMonth = addMonths(new Date().toISOString().slice(0, 7), -1);
+const lastMonth = addMonths(new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Nairobi" }).format(new Date()).slice(0, 7), -1);
 const MONTH = opt("month", lastMonth);
 const SAMPLE = flag("sample");
 const OUT = opt("out", `readers-report-${MONTH}.pdf`);
@@ -531,7 +531,7 @@ h3 { font-size: 10.5pt; margin: 0 0 2mm; font-weight: 700 }
     <h4>Contact</h4><p>Institute of Economic Affairs (IEA Kenya), ACK Garden House, 5th Floor, 1st Ngong Avenue, P.O. Box 53989-00200, Nairobi. admin@ieakenya.or.ke</p>
   </div>
   ${sampleNote}
-  <div class="foot"><span>Report generated ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}</span><span>5</span></div>
+  <div class="foot"><span>Report generated ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "Africa/Nairobi" })}</span><span>5</span></div>
 </section>
 </body></html>`;
 

@@ -127,7 +127,7 @@ cors <- function(req, res) {
 function() {
   list(
     message   = "Kenya Public Debt Counter API is running",
-    timestamp = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")
+    timestamp = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
   )
 }
 
@@ -137,7 +137,7 @@ function() {
 
 #* @get /health
 function() {
-  list(status = "healthy", time = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ"))
+  list(status = "healthy", time = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"))
 }
 
 # ============================================================
@@ -387,7 +387,7 @@ function(req, res) {
 
     # --- MODIFIED: use UUIDgenerate() as fallback ---
     session_id <- body$session_id %||% uuid::UUIDgenerate()
-    timestamp  <- body$timestamp %||% format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")
+    timestamp  <- body$timestamp %||% format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
 
     if (!is.null(supabase_url) && supabase_url != "") {
       url     <- paste0(supabase_url, "/rest/v1/visitor_metrics")
@@ -675,7 +675,7 @@ function(question, req, res) {
       return(list(
         success   = TRUE,
         response  = clean_scalar(result$response),
-        timestamp = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")
+        timestamp = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
       ))
     } else {
       return(list(success = FALSE, error = clean_scalar(result$error)))
@@ -750,7 +750,7 @@ function(req) {
       url  <- paste0(supabase_url, "/rest/v1/visitor_metrics")
       body <- list(
         session_id = session_id,
-        timestamp  = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ"),
+        timestamp  = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
         visitors   = 1L
       )
       POST(

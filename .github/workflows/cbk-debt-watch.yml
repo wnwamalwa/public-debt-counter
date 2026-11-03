@@ -24,6 +24,11 @@ concurrency:
   group: cbk-debt-watch
   cancel-in-progress: false
 
+# All dates and times in these scripts are Nairobi time (EAT), as on the site.
+# (Cron schedules above are still written in UTC: GitHub always reads them as UTC.)
+env:
+  TZ: Africa/Nairobi
+
 jobs:
   watch:
     runs-on: ubuntu-24.04  # pinned: ubuntu-latest moves to Ubuntu 26 from 19 Oct 2026
@@ -116,8 +121,8 @@ jobs:
           url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           existing=$(gh issue list --repo "${{ github.repository }}" --state open --search "in:title \"$title\"" --json number --jq '.[0].number // empty')
           if [ -n "$existing" ]; then
-            gh issue comment "$existing" --repo "${{ github.repository }}" --body "Failed again on $(date -u '+%Y-%m-%d %H:%M UTC'): $url"
+            gh issue comment "$existing" --repo "${{ github.repository }}" --body "Failed again on $(date '+%Y-%m-%d %H:%M EAT'): $url"
           else
             gh issue create --repo "${{ github.repository }}" --title "$title" \
-              --body "The scheduled run on $(date -u '+%Y-%m-%d %H:%M UTC') failed: $url. Close this issue once it is fixed."
+              --body "The scheduled run on $(date '+%Y-%m-%d %H:%M EAT') failed: $url. Close this issue once it is fixed."
           fi
