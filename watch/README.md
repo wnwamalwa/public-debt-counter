@@ -30,9 +30,10 @@ Every Monday at 09:07 Nairobi time, `check_reports.py` looks for new:
 
 | Source | Where it looks | Sheet tabs / inputs it feeds |
 |---|---|---|
-| Controller of Budget, National Government Budget Implementation Review Report, **full year** | https://cob.go.ke/publications/ | `debt_service`, `external_debt_currency`, `domestic_debt_instrument` |
+| Controller of Budget, National Government Budget Implementation Review Report, **full year** | https://cob.go.ke/publications/ | `external_debt_currency`, `domestic_debt_instrument` |
 | Same, **three, six or nine months** | same | `domestic_debt_instrument` (and `external_debt_currency` if the report has it) |
-| National Treasury, Annual Public Debt Report | likely file names on treasury.go.ke | `pv_indicators` |
+| National Treasury, Annual Public Debt Report | likely file names on treasury.go.ke | `debt_service` (from FY 2014/15), `pv_indicators`, `dsa_thresholds`; the quarterly report's `treasury-inputs` chunk |
+| IMF–World Bank Debt Sustainability Analysis for Kenya, and Kenya's legal debt limit | no listing: a reminder issue every March and September | `dsa_thresholds` (limits by period), `pv_indicators` |
 | National Treasury, Medium Term Debt Management Strategy | likely file names on treasury.go.ke | the quarterly report's `treasury-inputs` chunk |
 
 When something new appears it opens an issue, labelled "sheet update" and

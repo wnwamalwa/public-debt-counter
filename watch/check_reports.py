@@ -10,7 +10,8 @@ say which tabs each one feeds.
     full year). New titles in that list = a new report.
 
   National Treasury
-    Annual Public Debt Report and Medium Term Debt Management Strategy.
+    Annual Public Debt Report (debt_service, pv_indicators, dsa_thresholds)
+    and Medium Term Debt Management Strategy.
     The Treasury site has no stable listing page, so the next edition's
     likely file names are probed (HEAD) each run.
 
@@ -26,7 +27,10 @@ say which tabs each one feeds.
   National Treasury Annual Borrowing Plan: principal due (site_inputs, Chart 6).
 
   Yearly reminders for figures with no listing to watch: Kenya Railways'
-  accounts (November) and payments to Chinese lenders (August).
+  accounts (November), payments to Chinese lenders (August), and, in March
+  and September, the IMF-World Bank Debt Sustainability Analysis for Kenya
+  and Kenya's legal debt limit (dsa_thresholds tab: the limits Kenya is
+  judged against, which changed in 2018, 2019, 2021 and 2023).
 
 State lives in watch/reports.json. The first run only records what exists
 (no alert). Writes to $GITHUB_OUTPUT:
@@ -213,7 +217,7 @@ def exists(url):
 
 # What to type into the sheet for each kind of report.
 OCOB_FULL_YEAR = f"""Full-year OCOB report (figures at 30 June). In the [IEA macro data sheet]({SHEET}):
-- [ ] **`debt_service`**: add one row for the year: external principal, external interest, domestic principal, domestic interest (KSh bn), from the public debt service table. Feeds the site's Debt Service chart, the Thresholds chart and the home page.
+- Debt service (`debt_service`) now comes from the National Treasury's Annual Public Debt Report, not this report (OCOB leaves out the Treasury bill discount).
 - [ ] **`external_debt_currency`**: add one row per currency with *As at* = 30 June (table "External Debt Composition by Currency", KSh). Feeds the External Debt by Currency chart.
 - [ ] **`domestic_debt_instrument`**: add one row per instrument with *As at* = 30 June (Treasury bonds, Treasury bills, CBK overdraft, ...; KSh bn). Feeds the Domestic Debt by Instrument chart."""
 
@@ -224,7 +228,12 @@ OCOB_QUARTER = f"""Quarterly OCOB report. In the [IEA macro data sheet]({SHEET})
 
 TREASURY = {
     "Annual Public Debt Report": f"""In the [IEA macro data sheet]({SHEET}):
-- [ ] **`pv_indicators`**: add the present-value ratios (PV of public debt / GDP, PV of external debt / GDP, PV of external debt / exports) with `fiscal_year`, `value_pct`, `threshold_pct`, `source`, `published`. Feeds the Thresholds chart.""",
+- [ ] **`debt_service`**: from the table "Trend in Public Debt Service" (KSh million; enter KSh bn): add the new fiscal year's row (external principal, external interest, domestic principal, domestic interest, ordinary revenue), and overwrite the previous year's row, which was provisional. Keep Total as `=SUM(B:E)`. Feeds the Debt Service, Thresholds, Fiscal Space and Compare charts, the home page and the PDF report.
+- [ ] **`pv_indicators`**: add the present-value ratios (PV of public debt / GDP, PV of external debt / GDP, PV of external debt / exports) for the new fiscal year from the DSA tables, with `fiscal_year`, `value_pct`, `threshold_pct`, `source`, `published`. Feeds the Thresholds chart and Table 5 of the PDF report.
+- [ ] **`dsa_thresholds`**: check the "Debt Carrying Capacity" table. If Kenya's capacity (strong / medium / weak) or the thresholds changed, set `to_fy` on the rows now in force to the last fiscal year they applied to, and add new rows from the new year with the new limits, `capacity`, `source` and `source_url`.
+
+In the quarterly report (`quarterly_macro_debt_report_ieakenya.qmd`, the `treasury-inputs` chunk):
+- [ ] `dsa_indicators` (Latest = the new fiscal year's column of the external and public DSA tables), `mtds_year`, `wair_domestic` / `wair_external` (Weighted Average Interest Rate figure) and `real_gdp_growth_fallback`.""",
     "Medium Term Debt Management Strategy": f"""In the quarterly report (`quarterly_macro_debt_report_ieakenya.qmd`, the `treasury-inputs` chunk):
 - [ ] `mtds_year`, the DSA table `dsa_indicators` (Latest values), and the weighted average interest rates `wair_domestic` / `wair_external`.
 
@@ -242,8 +251,16 @@ The chart moves to the new fiscal year by itself once all 12 months of a year ar
 OCOB_COUNTY = f"""County Governments Budget Implementation Review Report. In the **`site_inputs`** tab of the [IEA macro data sheet]({SHEET}) (Chart 15):
 - [ ] `county_pending_bills`: total pending bills of the 47 counties at the report's end date (`period` = YYYY-MM-DD, unit `KSh bn`), with the report's link in `source_url`."""
 
+DSA_CHECK = f"""Look for a new IMF-World Bank Debt Sustainability Analysis for Kenya: IMF country reports on Kenya (programme reviews, Article IV) at https://www.imf.org/en/Countries/KEN, or the World Bank documents site (search "Kenya Joint World Bank-IMF Debt Sustainability Analysis"). Also check whether Kenya's legal debt limit (PFM Act / Regulations) has changed. In the **`dsa_thresholds`** tab of the [IEA macro data sheet]({SHEET}):
+- [ ] If the debt-carrying capacity (composite indicator) or the thresholds changed, set `to_fy` on the rows in force and add new rows from the first fiscal year the new limits apply to (the year whose 30 June falls after the assessment), with `capacity`, `source` and `source_url`.
+- [ ] If the legal limit changed, do the same for the `debt_to_gdp_legal` rows.
+- [ ] Add the new PV ratios to **`pv_indicators`** (newest `published` wins).
+Nothing to do if nothing changed; Kenya has been medium capacity since the April 2021 assessment."""
+
 REMINDERS = {
     # month: (key, title, body)
+    3: ("dsa_check_mar", "Check for a new IMF-World Bank debt sustainability assessment (thresholds)", DSA_CHECK),
+    9: ("dsa_check_sep", "Check for a new IMF-World Bank debt sustainability assessment (thresholds)", DSA_CHECK),
     8: ("china_payments", "Payments to Chinese lenders for the fiscal year just ended",
         f"""When the National Treasury's figures for the year to June are out (Budget Review and Outlook Paper, Quarterly Economic and Budget Review, or press reports of Treasury data), in the **`site_inputs`** tab of the [IEA macro data sheet]({SHEET}):
 - [ ] `china_payments`: total paid to Chinese lenders, principal + interest, all loans, `period` = the fiscal year (e.g. FY2026/27), unit `KSh bn` (Chart 14)."""),
