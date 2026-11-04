@@ -3,6 +3,7 @@
 // the history is kept permanently whatever the Vercel plan's reporting window.
 //
 //   node collect.mjs                 last 3 complete days (re-fetched: late data settles)
+//                                    plus today so far (INCLUDE_TODAY, default on)
 //   DAYS=31 node collect.mjs         backfill (Hobby keeps about a month)
 //   DRY_RUN=true node collect.mjs    fetch and print, write nothing
 //
@@ -23,6 +24,11 @@ const SB_URL = env("SUPABASE_URL").replace(/\/+$/, "");
 const SB_KEY = env("SUPABASE_SERVICE_ROLE");
 const DAYS = Math.max(1, Math.min(400, Number(env("DAYS", "3")) || 3));
 const DRY_RUN = /^(1|true|yes)$/i.test(env("DRY_RUN"));
+// Today's figures so far. The workflow runs three times a day; each run
+// REPLACES today's rows (and the last 3 days'), so Supabase still holds one
+// row per day (and one per day x breakdown value), not one per run. The next
+// morning's run re-fetches yesterday in full, which settles its final number.
+const INCLUDE_TODAY = !/^(0|false|no)$/i.test(env("INCLUDE_TODAY", "true"));
 
 // Our name -> Vercel dimension, and the label stored when Vercel has no value.
 const DIMENSIONS = {
@@ -77,11 +83,12 @@ const EAT_MS = 3 * 3600 * 1000; // Nairobi is UTC+3 all year (no daylight saving
 const todayEat = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Nairobi", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 const todayMidnight = Date.parse(`${todayEat}T00:00:00.000Z`); // the date only, as a UTC timestamp
 const dates = [];
-for (let i = DAYS; i >= 1; i--) dates.push(iso(new Date(todayMidnight - i * 86400000)));
+for (let i = DAYS; i >= (INCLUDE_TODAY ? 0 : 1); i--) dates.push(iso(new Date(todayMidnight - i * 86400000)));
 /** The UTC instants that bound a Nairobi day. */
 const dayWindow = (date) => ({
   since: new Date(Date.parse(`${date}T00:00:00.000Z`) - EAT_MS).toISOString(),
-  until: new Date(Date.parse(`${date}T00:00:00.000Z`) + 86400000 - EAT_MS - 1).toISOString(),
+  // Today ends now, not at midnight: Vercel won't be asked about the future.
+  until: new Date(Math.min(Date.parse(`${date}T00:00:00.000Z`) + 86400000 - EAT_MS - 1, Date.now())).toISOString(),
 });
 
 // --- breakdowns per day (one query per day and dimension, top 100 + "Others") ---

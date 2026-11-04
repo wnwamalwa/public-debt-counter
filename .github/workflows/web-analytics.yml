@@ -1,8 +1,12 @@
 name: Readership (Vercel Web Analytics)
 
-# Daily 07:37 Nairobi (04:37 UTC): copies the last 3 days of the site's Vercel
-# Web Analytics into Supabase (web_daily, web_daily_breakdown), so readership
-# history is kept permanently whatever the Vercel plan's reporting window.
+# Three times a day, 07:37, 13:37 and 19:37 Nairobi (04:37, 10:37, 16:37 UTC):
+# copies the last 3 days of the site's Vercel Web Analytics, plus today so far,
+# into Supabase (web_daily, web_daily_breakdown), so the About page's visitor
+# numbers move during the day and readership history is kept permanently
+# whatever the Vercel plan's reporting window. Each run REPLACES the rows for
+# those days, so Supabase keeps one row per day however often this runs; the
+# 07:37 run settles yesterday's final figure.
 # On the 2nd of each month it also builds last month's PDF readership report
 # and puts it in Supabase Storage (reports/readers/<month>.pdf and latest.pdf),
 # which the site's /readers page links to.
@@ -16,6 +20,8 @@ name: Readership (Vercel Web Analytics)
 on:
   schedule:
     - cron: "37 4 * * *"
+    - cron: "37 10 * * *"
+    - cron: "37 16 * * *"
     - cron: "52 4 2 * *"   # monthly report, after the daily copy has the last day of the month
   workflow_dispatch:
     inputs:
