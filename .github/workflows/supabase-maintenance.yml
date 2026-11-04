@@ -1,0 +1,47 @@
+name: Supabase check-up
+
+# By hand (Actions -> this workflow -> Run workflow):
+#   audit         list every table: rows, latest date, what reads it, stale or
+#                 unused; with SQL to archive unused tables (nothing is deleted)
+#   sync-legacy   copy today's figures into df_debt_metrics, the table the old
+#                 DigitalOcean API reads (it shows them after its next restart)
+# Also every Monday at 09:27 Nairobi time (06:27 UTC): audit + sync-legacy, so
+# a table that stops updating is caught. A stale table fails the run, and the
+# daily health check then emails about it.
+on:
+  schedule:
+    - cron: "27 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "What to do"
+        type: choice
+        options: [audit, sync-legacy, both]
+        default: audit
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supabase-maintenance
+  cancel-in-progress: false
+
+env:
+  TZ: Africa/Nairobi
+
+jobs:
+  checkup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+      ACTION: ${{ inputs.action || 'both' }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Copy today's figures into df_debt_metrics (old API)
+        if: env.ACTION == 'sync-legacy' || env.ACTION == 'both'
+        run: python3 watch/supabase_audit.py --sync-legacy
+      - name: Audit tables
+        if: env.ACTION == 'audit' || env.ACTION == 'both'
+        run: python3 watch/supabase_audit.py
