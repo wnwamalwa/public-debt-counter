@@ -30,6 +30,15 @@
 #   4. Adds a row to df_debt_current and df_debt_growth_per_sec (the two
 #      tables the website ticks the counter from), unless nothing changed
 #      since the last run.
+#   5. Rebuilds the months after CBK's latest monthly figure in
+#      df_debt_historical so the charts' history runs into today's figure
+#      instead of stepping up to it: each month-end (and today) is read off a
+#      path from the last CBK monthly figure through the bulletin's domestic
+#      figure (at its date) and external figure (at the end of its month),
+#      continued at the growth rates above. These rows are labelled
+#      source = "estimate" (CBK actuals stay "actual"); they replace df_debt.R's
+#      ARIMA "forecast" rows and its "current" row. Without this the months
+#      from July 2026 were ~KSh 280 bn below the bulletin by October.
 #
 # If the newest row is more than STALE_DAYS old the script writes nothing,
 # so the monthly method (df_debt.R) stays in charge until a new row is added.
@@ -100,6 +109,11 @@ sb_insert <- function(table, df) {
   res <- POST(paste0(supabase_url, "/rest/v1/", table), sb_headers("return=minimal"),
               body = toJSON(df, dataframe = "rows", digits = NA), timeout(60))
   if (http_error(res)) fail("Insert into ", table, " failed (HTTP ", status_code(res), "): ",
+                            substr(content(res, as = "text", encoding = "UTF-8"), 1, 300))
+}
+sb_delete <- function(table, query) {
+  res <- DELETE(paste0(supabase_url, "/rest/v1/", table), sb_headers("return=minimal"), query = query, timeout(60))
+  if (http_error(res)) fail("Delete from ", table, " failed (HTTP ", status_code(res), "): ",
                             substr(content(res, as = "text", encoding = "UTF-8"), 1, 300))
 }
 
@@ -411,12 +425,60 @@ cat("Growth basis      :", growth_basis, "| domestic trend from", dom_basis, "\n
 cat("Cross-currency    :", xfx$note, "| external growth:", ext_basis, "\n")
 cat("=================================================\n")
 
+# ------------------------------------------------------------
+# 5. MONTHS AFTER THE LAST CBK MONTHLY FIGURE, ANCHORED ON THE BULLETIN
+# ------------------------------------------------------------
+# A row dated the 1st of a month holds the stock at the END of that month
+# (CBK's convention in df_debt_historical). The path for each part runs
+# through: the last CBK monthly figure (end of its month), then the bulletin
+# figure (domestic at the end of its date; external at the end of its month,
+# at today's rate), then on at the growth rate per second.
+last_hist <- tail(hist, 1)
+t_actual  <- force_tz(as_datetime(last_hist$date %m+% months(1)), TZ)
+path_at <- function(times, t_pts, v_pts, gps) {
+  ok <- as.numeric(t_pts) >= as.numeric(t_actual)        # a bulletin older than the CBK month is ignored
+  t_pts <- as.numeric(t_pts[ok]); v_pts <- v_pts[ok]
+  o <- order(t_pts); t_pts <- t_pts[o]; v_pts <- v_pts[o]
+  x <- as.numeric(times); t_end <- max(t_pts); v_end <- v_pts[which.max(t_pts)]
+  out <- if (length(t_pts) > 1) approx(t_pts, v_pts, xout = pmin(x, t_end), rule = 2)$y else rep(v_end, length(x))
+  out + ifelse(x > t_end, gps * (x - t_end), 0)
+}
+# Completed months only (their end has passed), then a row for today; the
+# current month's row would be its future month-end and plot after today.
+last_full  <- floor_date(as_date(now_time), "month") %m-% months(1)
+est_months <- if (last_full > last_hist$date) seq(last_hist$date %m+% months(1), last_full, by = "month") else as.Date(character(0))
+t_rows <- c(force_tz(as_datetime(est_months %m+% months(1)), TZ), now_time)
+est_dom <- path_at(t_rows, c(t_actual, dom_from), c(last_hist$debt_dom, latest$domestic), gps_dom)
+est_ext <- path_at(t_rows, c(t_actual, ext_from), c(last_hist$debt_ext, ext_usd_now * fx$value), gps_ext)
+# Today's row is the counter's own figure, so the history ends exactly where the counter is.
+est_dom[length(est_dom)] <- debt_dom
+est_ext[length(est_ext)] <- debt_ext
+est_rows <- data.frame(
+  date = c(format(est_months, "%Y-%m-%d"), format(as_date(now_time), "%Y-%m-%d")),
+  debt_dom = est_dom, debt_ext = est_ext, debt_ttl = est_dom + est_ext, source = "estimate"
+)
+est_rows <- est_rows[!duplicated(est_rows$date, fromLast = TRUE), ]  # a month's 1st = today: keep today's row
+cat("Months after the last CBK figure (", format(last_hist$date, "%b %Y"), "), anchored on the bulletin:\n", sep = "")
+for (i in seq_len(nrow(est_rows))) cat(sprintf("  %s  KSh %s bn (domestic %s, external %s)\n", est_rows$date[i],
+                                               bn(est_rows$debt_ttl[i]), bn(est_rows$debt_dom[i]), bn(est_rows$debt_ext[i])))
+
 if (DRY_RUN) { log_msg("DRY RUN - nothing written."); quit(save = "no", status = 0) }
 if (unchanged && !FORCE) { log_msg("Same bulletin row and exchange rate as last run - nothing to write."); quit(save = "no", status = 0) }
 if (!nzchar(supabase_url) || !nzchar(supabase_key)) fail("SUPABASE_URL and SUPABASE_SERVICE_ROLE must be set.")
 
 sb_insert("df_debt_current", data.frame(date = stamp, debt_dom = debt_dom, debt_ext = debt_ext, debt_ttl = debt_ttl))
 sb_insert("df_debt_growth_per_sec", data.frame(date = stamp, gps_dom = gps_dom, gps_ext = gps_ext, gps_ttl = gps_ttl))
+# Replace the estimated months: insert the new rows first, then remove every
+# older non-actual row after the last CBK month (ARIMA forecasts, earlier
+# estimates, "current" rows), so the table is never left without them.
+if (nrow(est_rows)) {
+  run_started <- format(now(tzone = "UTC"), "%Y-%m-%dT%H:%M:%OS3Z")
+  sb_insert("df_debt_historical", est_rows)
+  sb_delete("df_debt_historical", list(source = "in.(forecast,current,estimate)",
+                                       date = paste0("gt.", format(last_hist$date, "%Y-%m-%d")),
+                                       created_at = paste0("lt.", run_started)))
+  log_msg("df_debt_historical: ", nrow(est_rows), " estimated rows after ", format(last_hist$date, "%b %Y"), " rebuilt from the bulletin.")
+}
 dir.create(dirname(STATE_FILE), showWarnings = FALSE, recursive = TRUE)
 writeLines(signature, STATE_FILE)
 log_msg("Counter updated from the ", format(latest$bulletin_date), " bulletin.")

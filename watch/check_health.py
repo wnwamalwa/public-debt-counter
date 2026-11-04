@@ -8,8 +8,9 @@ update itself actually updating?
      over 2 hours.
   2. The quarterly PDF report: latest.json on the `report` branch should be
      dated today (after 15:00 Nairobi) and never more than 2 days old.
-  3. The website: key API routes answer with data, and the latest debt
-     figure is not more than 60 days old.
+  3. The website: key API routes answer with data, the latest debt figure
+     is not more than 60 days old, and CBK's latest monthly figure (the last
+     "actual" row) is not more than 150 days past its month-end.
   4. One source of truth: every other address that serves the counter
      gives the same figures as the site: www.kenyadebtcounter.or.ke, the
      old api.kenyadebtcounter.or.ke, and the Public Debt Counter box on
@@ -141,6 +142,18 @@ def check_site(now):
         age = (now.astimezone(EAT).date() - last).days
         if age > 60:
             problems.append(f"**Website**: the latest debt figure is dated {last:%d %b %Y}, {age} days ago. Check the CBK watch workflows.")
+        # The newest rows are estimates; CBK's own monthly figure is the last "actual"
+        # row (dated the 1st, = end of that month). CBK publishes about 3-4 months late.
+        actual = [dt.date.fromisoformat(str(r["date"])[:10]) for r in rows if r.get("kind") == "actual"]
+        if actual:
+            m = max(actual)
+            month_end = (m.replace(day=28) + dt.timedelta(days=4)).replace(day=1) - dt.timedelta(days=1)
+            lag = (now.astimezone(EAT).date() - month_end).days
+            if lag > 150:
+                problems.append(f"**Website**: CBK's latest monthly debt figure on the site is for {m:%B %Y}, {lag} days ago "
+                                "(CBK usually publishes within about 4 months). Check the CBK public debt watch.")
+        elif rows and "kind" not in rows[0]:
+            problems.append("**Website** `/api/debt/historical`: rows have no `kind`, so the last CBK monthly figure cannot be checked.")
     except Exception as e:
         problems.append(f"**Website** `/api/debt/historical`: could not check the latest date ({e}).")
     return problems
