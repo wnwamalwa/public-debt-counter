@@ -10,6 +10,9 @@ update itself actually updating?
      dated today (after 15:00 Nairobi) and never more than 2 days old.
   3. The website: key API routes answer with data, and the latest debt
      figure is not more than 60 days old.
+  4. One source of truth: every other address that serves the counter
+     (api.kenyadebtcounter.or.ke, used by the box on ieakenya.or.ke, and
+     www.kenyadebtcounter.or.ke) gives the same figures as the site.
 
 Writes to $GITHUB_OUTPUT:
     problems=true|false
@@ -38,6 +41,11 @@ EAT = dt.timezone(dt.timedelta(hours=3))
 UA = "KenyaDebtCounterHealth/1.0"
 HERE = os.path.dirname(os.path.abspath(__file__))
 BODY = os.path.join(HERE, "health.md")
+
+# Other addresses that serve the counter; each must match SITE.
+MIRRORS = [m.strip().rstrip("/") for m in os.environ.get(
+    "HEALTH_MIRRORS", "https://api.kenyadebtcounter.or.ke,https://www.kenyadebtcounter.or.ke"
+).split(",") if m.strip()]
 
 # Site routes that must answer {success: true}.
 ROUTES = ["/api/debt/current", "/api/debt/service", "/api/debt/spending", "/api/debt/tax-revenue", "/api/debt/site-inputs"]
@@ -134,9 +142,46 @@ def check_site(now):
     return problems
 
 
+def figures(base):
+    """(total debt now, growth per second, domestic share %) from an address, or None."""
+    try:
+        cur = get_json(base + "/api/debt/current", timeout=40)["data"]
+        gro = get_json(base + "/api/debt/growth?unit=sec", timeout=40)["data"]
+        total = float(cur["total"])
+        ts = cur.get("timestamp")
+        # Bring the total to this instant, so addresses read seconds apart compare fairly.
+        if ts:
+            lag = (dt.datetime.now(dt.timezone.utc) - parse_time(ts)).total_seconds()
+            total += float(gro["total"]) * max(0.0, lag)
+        return total, float(gro["total"]), 100 * float(cur["domestic"]) / (float(cur["domestic"]) + float(cur["external"]))
+    except Exception:
+        return None
+
+
+def check_same_source():
+    """Every mirror must give the site's figures (total within 0.05%, rate within 1%)."""
+    ref = figures(SITE)
+    if not ref:
+        return []  # the site's own problems are reported by check_site
+    problems = []
+    for base in MIRRORS:
+        got = figures(base)
+        host = base.replace("https://", "")
+        if got is None:
+            continue  # address not set up or not an API (e.g. www before the move): nothing to compare
+        t, g, d = got
+        if abs(t / ref[0] - 1) > 0.0005 or abs(g / ref[1] - 1) > 0.01 or abs(d - ref[2]) > 0.2:
+            problems.append(
+                f"**{host}** gives different figures from the site: KSh {t / 1e12:,.3f} trn at KSh {g:,.0f}/sec "
+                f"(domestic {d:.1f}%) against KSh {ref[0] / 1e12:,.3f} trn at KSh {ref[1]:,.0f}/sec (domestic {ref[2]:.1f}%). "
+                f"It is not reading the same source; point it to Vercel."
+            )
+    return problems
+
+
 def main():
     now = dt.datetime.now(dt.timezone.utc)
-    problems = check_actions(now) + check_report(now) + check_site(now)
+    problems = check_actions(now) + check_report(now) + check_site(now) + check_same_source()
     stamp = now.astimezone(EAT).strftime("%d %b %Y, %H:%M EAT")
     sig = hashlib.sha1("\n".join(sorted(p.split(" (")[0] for p in problems)).encode()).hexdigest()[:10]
     if problems:
@@ -145,7 +190,7 @@ def main():
                 + "\n\nThis issue closes itself on the first day everything is back to normal."
                 + f"\n\n<!-- health-signature: {sig} -->\n")
     else:
-        body = f"All clear on {stamp}: workflows, the quarterly report and the website are all up to date.\n"
+        body = f"All clear on {stamp}: workflows, the quarterly report and the website are all up to date, and every counter address matches the site.\n"
     print(body)
     if "--print" in sys.argv:
         return
