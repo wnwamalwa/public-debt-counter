@@ -26,6 +26,15 @@ say which tabs each one feeds.
 
   National Treasury Annual Borrowing Plan: principal due (site_inputs, Chart 6).
 
+  Debt sustainability thresholds and their sources
+    watch/reference_sources.json lists every document the thresholds and
+    related figures rest on (Annual Public Debt Reports, IMF-World Bank
+    DSAs, the PFM law changes). Each run checks that each can still be
+    found, as does every source_url in the sheet's dsa_thresholds tab, and
+    opens an issue if one has disappeared (a site that blocks the check is
+    reported as unverified, not as gone). New joint World Bank-IMF DSAs for
+    Kenya are looked for in the World Bank documents search.
+
   Yearly reminders for figures with no listing to watch: Kenya Railways'
   accounts (November), payments to Chinese lenders (August), and, in March
   and September, the IMF-World Bank Debt Sustainability Analysis for Kenya
@@ -66,6 +75,15 @@ TITLE_RE = re.compile(
     r"((?:(?:First|Second|Third)\s+)?(?:three|six|nine)\s+months|First\s+(?:quarter|half)|Half\s+year)?"
     r"\s*(?:of\s+)?(?:the\s+)?FY\s*(20\d\d)\s*[/-]\s*(\d{2,4})",
     re.I,
+)
+
+
+REFS = os.path.join(HERE, "reference_sources.json")
+DSA_TAB_CSV = f"{SHEET}/export?format=csv&gid=546377000"  # dsa_thresholds
+WB_DSA_SEARCH = (
+    "https://search.worldbank.org/api/v2/wds?format=json&rows=50"
+    "&qterm=Kenya%20Joint%20World%20Bank-IMF%20Debt%20Sustainability%20Analysis"
+    "&fl=display_title,docdt,url,pdfurl"
 )
 
 
@@ -215,6 +233,106 @@ def exists(url):
         return False
 
 
+def probe(url):
+    """'ok' if the document answers, 'gone' if the server says it isn't there
+    (404/410, or the host no longer exists), 'unverified' if the check was
+    blocked or failed for another reason (403, 429, 5xx, timeouts)."""
+    for method in ("HEAD", "GET"):
+        try:
+            status, _ = get(url, method=method, timeout=40)
+            if 200 <= status < 400:
+                return "ok"
+        except urllib.error.HTTPError as e:
+            if e.code in (404, 410):
+                return "gone"
+            if e.code == 405 and method == "HEAD":
+                continue
+            return "unverified"
+        except urllib.error.URLError as e:
+            if "Name or service not known" in str(e.reason) or "nodename nor servname" in str(e.reason):
+                return "gone"
+            return "unverified"
+        except Exception:
+            return "unverified"
+    return "unverified"
+
+
+def sheet_source_urls():
+    """Every source_url in the sheet's dsa_thresholds tab (empty if unreadable)."""
+    import csv
+    import io
+    try:
+        _, raw = get(DSA_TAB_CSV)
+    except Exception as e:
+        print(f"dsa_thresholds tab: could not read ({e})", file=sys.stderr)
+        return []
+    if raw.lstrip().startswith("<"):
+        return []
+    rows = list(csv.DictReader(io.StringIO(raw)))
+    return sorted({(r.get("source_url") or "").strip() for r in rows if (r.get("source_url") or "").strip().startswith("http")})
+
+
+def check_references(state, dry):
+    """Check the registered documents and the sheet's source links.
+    Returns (issue sections, short names) for anything newly gone or never found."""
+    with open(REFS) as f:
+        refs = json.load(f)["sources"]
+    seen = state.get("reference_sources", {})
+    new_state, parts, names = {}, [], []
+    targets = [(r["key"], r["title"], r["urls"], r.get("supports", "")) for r in refs]
+    registered = {u for r in refs for u in r["urls"]}
+    for u in sheet_source_urls():
+        if u not in registered:
+            targets.append((f"sheet:{u}", f"Source link in the dsa_thresholds tab: {u}", [u], "dsa_thresholds"))
+    for key, title, urls, supports in targets:
+        results = [(u, probe(u)) for u in urls]
+        hit = next((u for u, r in results if r == "ok"), None)
+        status = "ok" if hit else ("unverified" if any(r == "unverified" for _, r in results) else "gone")
+        prev = seen.get(key, {}).get("status")
+        new_state[key] = {"status": status, "url": hit or urls[0], "checked": dt.date.today().isoformat()}
+        print(f"Reference {key}: {status}{' ' + hit if hit else ''}")
+        if status == "gone" and prev != "gone":
+            names.append(f"source link gone: {key}")
+            parts.append(
+                f"## Source no longer found: {title}\n"
+                + "\n".join(f"- {u} ({r})" for u, r in results)
+                + f"\n\nIt supports: {supports}.\n"
+                "- [ ] Find where the document now lives (or an archived copy) and update its link in "
+                "`watch/reference_sources.json` and, if it appears there, the `source_url` column of the "
+                f"**`dsa_thresholds`** tab of the [IEA macro data sheet]({SHEET}).\n"
+            )
+    if not dry:
+        state["reference_sources"] = new_state
+    return parts, names
+
+
+def new_wb_dsas(state, dry):
+    """Joint World Bank-IMF DSAs for Kenya in the World Bank documents search
+    that have not been seen before. The first run only records what exists."""
+    try:
+        _, raw = get(WB_DSA_SEARCH)
+        docs = json.loads(raw).get("documents", {})
+    except Exception as e:
+        print(f"World Bank documents search: unavailable ({e})", file=sys.stderr)
+        return []
+    found = {}
+    for d in docs.values():
+        if not isinstance(d, dict):
+            continue
+        t = d.get("display_title") or ""
+        if "kenya" in t.lower() and "sustainability" in t.lower():
+            link = d.get("pdfurl") or d.get("url") or ""
+            found[link or t] = f"{t} ({(d.get('docdt') or '')[:10]}) {link}".strip()
+    if not found:
+        print("World Bank documents search: no Kenya DSA titles parsed (format may have changed).", file=sys.stderr)
+        return []
+    first = "wb_dsa" not in state
+    new = [] if first else [v for k, v in sorted(found.items()) if k not in set(state["wb_dsa"])]
+    if not dry:
+        state["wb_dsa"] = sorted(set(state.get("wb_dsa", [])) | set(found))
+    return new
+
+
 # What to type into the sheet for each kind of report.
 OCOB_FULL_YEAR = f"""Full-year OCOB report (figures at 30 June). In the [IEA macro data sheet]({SHEET}):
 - Debt service (`debt_service`) now comes from the National Treasury's Annual Public Debt Report, not this report (OCOB leaves out the Treasury bill discount).
@@ -231,6 +349,7 @@ TREASURY = {
 - [ ] **`debt_service`**: from the table "Trend in Public Debt Service" (KSh million; enter KSh bn): add the new fiscal year's row (external principal, external interest, domestic principal, domestic interest, ordinary revenue), and overwrite the previous year's row, which was provisional. Keep Total as `=SUM(B:E)`. Feeds the Debt Service, Thresholds, Fiscal Space and Compare charts, the home page and the PDF report.
 - [ ] **`pv_indicators`**: add the present-value ratios (PV of public debt / GDP, PV of external debt / GDP, PV of external debt / exports) for the new fiscal year from the DSA tables, with `fiscal_year`, `value_pct`, `threshold_pct`, `source`, `published`. Feeds the Thresholds chart and Table 5 of the PDF report.
 - [ ] **`dsa_thresholds`**: check the "Debt Carrying Capacity" table. If Kenya's capacity (strong / medium / weak) or the thresholds changed, set `to_fy` on the rows now in force to the last fiscal year they applied to, and add new rows from the new year with the new limits, `capacity`, `source` and `source_url`.
+- [ ] Add the report (with this link) to `watch/reference_sources.json`, so it is checked every week.
 
 In the quarterly report (`quarterly_macro_debt_report_ieakenya.qmd`, the `treasury-inputs` chunk):
 - [ ] `dsa_indicators` (Latest = the new fiscal year's column of the external and public DSA tables), `mtds_year`, `wair_domestic` / `wair_external` (Weighted Average Interest Rate figure) and `real_gdp_growth_fallback`.""",
@@ -255,6 +374,7 @@ DSA_CHECK = f"""Look for a new IMF-World Bank Debt Sustainability Analysis for K
 - [ ] If the debt-carrying capacity (composite indicator) or the thresholds changed, set `to_fy` on the rows in force and add new rows from the first fiscal year the new limits apply to (the year whose 30 June falls after the assessment), with `capacity`, `source` and `source_url`.
 - [ ] If the legal limit changed, do the same for the `debt_to_gdp_legal` rows.
 - [ ] Add the new PV ratios to **`pv_indicators`** (newest `published` wins).
+- [ ] Add each new document relied on to `watch/reference_sources.json`, so its link is checked every week.
 Nothing to do if nothing changed; Kenya has been medium capacity since the April 2021 assessment."""
 
 REMINDERS = {
@@ -322,13 +442,16 @@ def main():
         if tag not in reminders:
             due.append((tag, rtitle, rbody))
 
+    ref_parts, ref_names = check_references(state, dry)
+    new_dsa = new_wb_dsas(state, dry)
+
     print("OCOB county reports listed:", ", ".join(sorted(found_county)) or "none")
     print("KNBS LEI editions listed:", ", ".join(sorted(found_lei)) or "none")
     print("OCOB national reports listed:", ", ".join(sorted(found_ocob)) or "none")
     print("New OCOB:", new_ocob or "none")
     print("New Treasury:", [n for n, _ in new_tsy] or "none")
 
-    alert = (new_ocob or new_tsy or new_county or new_lei or due) and not first_run
+    alert = (new_ocob or new_tsy or new_county or new_lei or due or ref_parts or new_dsa) and not first_run
     parts = []
     if alert:
         parts.append("New reports are out. Update the sheet so the site and the daily PDF report pick them up "
@@ -349,13 +472,18 @@ def main():
             parts.append(f"## KNBS: Leading Economic Indicators, {MONTHS[int(mth) - 1]} {y}\n{found_lei[k]}\n\n{KNBS_LEI}\n")
         for _, rtitle, rbody in due:
             parts.append(f"## Reminder: {rtitle}\n{rbody}\n")
+        for d in new_dsa:
+            parts.append(f"## New IMF-World Bank Debt Sustainability Analysis for Kenya\n{d}\n\n{DSA_CHECK}\n"
+                         "- [ ] Add it to `watch/reference_sources.json`.\n")
+        parts.extend(ref_parts)
         parts.append("Close this issue once the sheet is updated.")
         with open(BODY, "w") as f:
             f.write("\n".join(parts))
     elif first_run:
         print("First run: recorded what exists now; future runs alert on anything new.")
 
-    names = new_ocob + [n for n, _ in new_tsy] + [f"OCOB county {t}" for t in new_county] + [f"KNBS LEI {k}" for k in new_lei] + [r[1] for r in due]
+    names = (new_ocob + [n for n, _ in new_tsy] + [f"OCOB county {t}" for t in new_county] + [f"KNBS LEI {k}" for k in new_lei]
+             + [r[1] for r in due] + (["new IMF-World Bank DSA for Kenya"] if new_dsa else []) + ref_names)
     title = "New data to enter in the sheet: " + "; ".join(
         (f"OCOB {n}" if n in new_ocob else n) for n in names
     ) if names else ""

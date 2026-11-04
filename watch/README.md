@@ -34,10 +34,12 @@ Every Monday at 09:07 Nairobi time, `check_reports.py` looks for new:
 | Same, **three, six or nine months** | same | `domestic_debt_instrument` (and `external_debt_currency` if the report has it) |
 | National Treasury, Annual Public Debt Report | likely file names on treasury.go.ke | `debt_service` (from FY 2014/15), `pv_indicators`, `dsa_thresholds`; the quarterly report's `treasury-inputs` chunk |
 | IMF–World Bank Debt Sustainability Analysis for Kenya, and Kenya's legal debt limit | no listing: a reminder issue every March and September | `dsa_thresholds` (limits by period), `pv_indicators` |
+| Joint World Bank–IMF DSAs for Kenya | World Bank documents search (new titles) | `dsa_thresholds`, `pv_indicators` |
+| Every document the thresholds rest on (`watch/reference_sources.json`: Annual Public Debt Reports 2013/14, 2020/21, 2024/25, 2025/26; DSAs of Dec 2016, May 2020, Apr 2021; the 2019 and 2023 PFM law changes) and every `source_url` in the `dsa_thresholds` tab | each link, every week | an issue if a link disappears (a site that blocks the check is reported as unverified, not as gone) |
 | National Treasury, Medium Term Debt Management Strategy | likely file names on treasury.go.ke | the quarterly report's `treasury-inputs` chunk |
 
 When something new appears it opens an issue, labelled "sheet update" and
 assigned to the repository owner (GitHub emails them), with a checklist of
-what to enter. What has been seen is kept in `reports.json`; the first run
+what to enter. What has been seen, and the last check of each reference link, is kept in `reports.json`; the first run
 only records what exists. Run it any time from Actions → "New reports to
 enter in the sheet" → Run workflow.

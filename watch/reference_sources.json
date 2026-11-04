@@ -1,0 +1,75 @@
+{
+  "_about": "Documents the Kenya Debt Counter's debt sustainability thresholds and related figures rest on. watch/check_reports.py checks every week that each one can still be found (and records which link worked), and opens an issue if a link disappears. Every source_url in the sheet's dsa_thresholds tab is checked the same way. Add a document here whenever the site or the report starts relying on it. 'urls' are tried in order; 'confirmed': false means the link is a likely address that has not been checked by hand yet.",
+  "sources": [
+    {
+      "key": "apdr_2013_14",
+      "title": "National Treasury, Annual Public Debt Report 2013/14 (section 7.3: DSA thresholds, strong policy performer)",
+      "urls": ["https://treasury.go.ke/wp-content/uploads/2021/02/Annual-Public-Debt-Report-2013-2014.pdf"],
+      "confirmed": true,
+      "supports": "dsa_thresholds: FY2013/14 to FY2017/18 limits (old framework, strong)"
+    },
+    {
+      "key": "dsa_2016_12",
+      "title": "IMF-IDA Debt Sustainability Analysis update for Kenya, December 2016 (CPIA 3.83, strong)",
+      "urls": ["https://newsite.treasury.go.ke/sites/default/files/debt/Debt-Sustainability-Analysis-December-2016.pdf"],
+      "confirmed": true,
+      "supports": "dsa_thresholds: FY2013/14 to FY2017/18 limits (50/200/300/25/22; public debt 74)"
+    },
+    {
+      "key": "dsa_2020_05",
+      "title": "Joint World Bank-IMF Debt Sustainability Analysis for Kenya, May 2020 (CI 3.12, strong; prior DSA IMF CR 18/295, Oct 2018)",
+      "urls": ["https://documents1.worldbank.org/curated/en/796991589998832687/txt/Kenya-Joint-World-Bank-IMF-Debt-Sustainability-Analysis.txt"],
+      "confirmed": true,
+      "supports": "dsa_thresholds: FY2018/19 and FY2019/20 limits (55/240/21/23; public debt 70)"
+    },
+    {
+      "key": "dsa_2021_04",
+      "title": "Joint World Bank-IMF Debt Sustainability Analysis for Kenya, April 2021 (IMF CR 21/72; CI 3.01, medium)",
+      "urls": ["https://documents1.worldbank.org/curated/en/238771622150014771/txt/Kenya-Joint-World-Bank-IMF-Debt-Sustainability-Analysis.txt"],
+      "confirmed": true,
+      "supports": "dsa_thresholds: FY2020/21 onwards limits (40/180/15/18; public debt 55)"
+    },
+    {
+      "key": "apdr_2020_21",
+      "title": "National Treasury, Annual Public Debt Report 2020/21 (section 9.8; Tables 4.7-1, 9.9-1 and 9.10-1)",
+      "urls": [
+        "https://www.treasury.go.ke/sites/default/files/Annual-Public-Debt-Report-2020-2021.pdf",
+        "https://www.treasury.go.ke/wp-content/uploads/2021/11/Annual-Public-Debt-Report-2020-2021.pdf",
+        "https://www.treasury.go.ke/wp-content/uploads/2021/12/Annual-Public-Debt-Report-2020-2021.pdf"
+      ],
+      "confirmed": false,
+      "supports": "dsa_thresholds: change from strong to medium (CI 3.12 to 3.01); debt_service FY2014/15 to FY2020/21"
+    },
+    {
+      "key": "apdr_2024_25",
+      "title": "National Treasury, Annual Public Debt Report 2024/25",
+      "urls": ["https://www.treasury.go.ke/sites/default/files/Annual-Public-Debt-Report-2024-2025.pdf"],
+      "confirmed": true,
+      "supports": "pv_indicators: PV of public debt / GDP, FY2024/25 (63.7)"
+    },
+    {
+      "key": "apdr_2025_26",
+      "title": "National Treasury, Annual Public Debt Report 2025/26 (Tables 3, 4 and 21-24; Figure 17)",
+      "urls": [
+        "https://www.treasury.go.ke/sites/default/files/Annual-Public-Debt-Report-2025-2026.pdf",
+        "https://www.treasury.go.ke/sites/default/files/Annual%20Public%20Debt%20Report%202025-2026.pdf"
+      ],
+      "confirmed": false,
+      "supports": "debt_service FY2021/22 to FY2025/26; pv_indicators FY2025/26; dsa_thresholds (still medium, CI 3.01); the report's DSA table and interest rates"
+    },
+    {
+      "key": "pfm_2019_ceiling",
+      "title": "Business Daily (30 Sep 2019): Treasury law change ups public debt cap to Sh9trn (PFM Regulations 2015 limit of 50% of GDP replaced by a KSh 9 trillion ceiling)",
+      "urls": ["https://www.businessdailyafrica.com/bd/news/treasury-law-change-ups-public-debt-cap-to-sh9trn-2266074"],
+      "confirmed": true,
+      "supports": "dsa_thresholds: debt_to_gdp_legal, 50% FY2015/16 to FY2018/19; no ratio FY2019/20 to FY2022/23"
+    },
+    {
+      "key": "pfm_2023_anchor",
+      "title": "Nation: Fresh loans push Kenya's public debt stock to Sh12.82trn (PFM Act amended Oct 2023: anchor of 55% of GDP in present value)",
+      "urls": ["https://nation.africa/kenya/business/fresh-loans-push-kenya-s-public-debt-stock-to-sh12-82trn-5543624"],
+      "confirmed": true,
+      "supports": "dsa_thresholds: debt_to_gdp_legal, 55% from FY2023/24"
+    }
+  ]
+}
