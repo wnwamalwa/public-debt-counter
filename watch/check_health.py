@@ -11,8 +11,11 @@ update itself actually updating?
   3. The website: key API routes answer with data, and the latest debt
      figure is not more than 60 days old.
   4. One source of truth: every other address that serves the counter
-     (api.kenyadebtcounter.or.ke, used by the box on ieakenya.or.ke, and
-     www.kenyadebtcounter.or.ke) gives the same figures as the site.
+     gives the same figures as the site: www.kenyadebtcounter.or.ke, the
+     old api.kenyadebtcounter.or.ke, and the Public Debt Counter box on
+     ieakenya.or.ke (its WordPress route, /wp-json/iea/v1/debt-counter,
+     which once served a cached 30 October figure for days unnoticed).
+     An address that cannot be read is reported too, not skipped.
 
 Writes to $GITHUB_OUTPUT:
     problems=true|false
@@ -44,7 +47,8 @@ BODY = os.path.join(HERE, "health.md")
 
 # Other addresses that serve the counter; each must match SITE.
 MIRRORS = [m.strip().rstrip("/") for m in os.environ.get(
-    "HEALTH_MIRRORS", "https://api.kenyadebtcounter.or.ke,https://www.kenyadebtcounter.or.ke"
+    "HEALTH_MIRRORS",
+    "https://api.kenyadebtcounter.or.ke,https://www.kenyadebtcounter.or.ke,https://ieakenya.or.ke/wp-json/iea/v1/debt-counter",
 ).split(",") if m.strip()]
 
 # Site routes that must answer {success: true}.
@@ -142,18 +146,38 @@ def check_site(now):
     return problems
 
 
+def _num(v):
+    """A number, also when wrapped in a one-item list (the old api.kenyadebtcounter.or.ke
+    answers {"total": [13593708521665.4]})."""
+    if isinstance(v, list):
+        v = v[0] if v else None
+    return float(v)
+
+
 def figures(base):
-    """(total debt now, growth per second, domestic share %) from an address, or None."""
+    """(total debt now, growth per second, domestic share %) from an address, or None.
+
+    Most addresses serve the site's API (/api/debt/current and /api/debt/growth).
+    The IEA Kenya box is a single WordPress route giving total, growth, domestic,
+    external and timestamp in one object."""
     try:
-        cur = get_json(base + "/api/debt/current", timeout=40)["data"]
-        gro = get_json(base + "/api/debt/growth?unit=sec", timeout=40)["data"]
-        total = float(cur["total"])
-        ts = cur.get("timestamp")
+        if "/wp-json/" in base:
+            cur = get_json(base + ("&" if "?" in base else "?") + "_nocache=" + str(int(dt.datetime.now().timestamp())), timeout=40)
+            cur = cur.get("data", cur)
+            growth = _num(cur["growth"])
+        else:
+            cur = get_json(base + "/api/debt/current", timeout=40)["data"]
+            growth = _num(get_json(base + "/api/debt/growth?unit=sec", timeout=40)["data"]["total"])
+        total = _num(cur["total"])
+        ts = cur.get("timestamp") or cur.get("as_of") or cur.get("asOf")
+        if isinstance(ts, list):
+            ts = ts[0] if ts else None
         # Bring the total to this instant, so addresses read seconds apart compare fairly.
         if ts:
             lag = (dt.datetime.now(dt.timezone.utc) - parse_time(ts)).total_seconds()
-            total += float(gro["total"]) * max(0.0, lag)
-        return total, float(gro["total"]), 100 * float(cur["domestic"]) / (float(cur["domestic"]) + float(cur["external"]))
+            total += growth * max(0.0, lag)
+        dom, ext = _num(cur["domestic"]), _num(cur["external"])
+        return total, growth, 100 * dom / (dom + ext)
     except Exception:
         return None
 
@@ -168,13 +192,15 @@ def check_same_source():
         got = figures(base)
         host = base.replace("https://", "")
         if got is None:
-            continue  # address not set up or not an API (e.g. www before the move): nothing to compare
+            problems.append(f"**{host}** could not be read, so it could not be compared with the site. Check that it is up and still serves the counter (or remove it from HEALTH_MIRRORS if it has been retired).")
+            continue
         t, g, d = got
         if abs(t / ref[0] - 1) > 0.0005 or abs(g / ref[1] - 1) > 0.01 or abs(d - ref[2]) > 0.2:
             problems.append(
                 f"**{host}** gives different figures from the site: KSh {t / 1e12:,.3f} trn at KSh {g:,.0f}/sec "
                 f"(domestic {d:.1f}%) against KSh {ref[0] / 1e12:,.3f} trn at KSh {ref[1]:,.0f}/sec (domestic {ref[2]:.1f}%). "
-                f"It is not reading the same source; point it to Vercel."
+                + ("It is not reading the same source, or is serving a cached figure; check the WordPress route's caching."
+                 if "/wp-json/" in base else "It is not reading the same source; point it to Vercel.")
             )
     return problems
 
