@@ -1,0 +1,111 @@
+name: X posts (IEA Kenya account)
+
+# Every hour at :07 Nairobi time, checks the "x_posts" tab of the IEA Google
+# Sheet for rows with status "ready" whose post_at time has come, fills in the
+# live figures, renders the counter video / debt-trend chart, and posts them
+# from the IEA Kenya X account. The result (posted / failed / missed, the post
+# link and any note) is written back to the row. Nothing is posted unless a
+# person has set a row to "ready", so the sheet is the approval step.
+# See x-posts/README.md for how to write a post.
+#
+# By hand (Actions -> this workflow -> Run workflow):
+#   dry_run   render and show everything in the run summary, post nothing
+#   only_row  post this sheet row now (its row number), ignoring its time
+#
+# Needs repository secrets X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN,
+# X_ACCESS_TOKEN_SECRET (IEA Kenya's X developer app, "Read and write"),
+# GSHEET_SERVICE_ACCOUNT, SUPABASE_URL and SUPABASE_SERVICE_ROLE (fallback).
+# Optional repository variable X_POSTS_SHEET_ID to use a different sheet.
+on:
+  schedule:
+    - cron: "7 * * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run: render and show the posts, post nothing"
+        type: boolean
+        default: true
+      only_row:
+        description: "Post only this sheet row now (row number, blank = whatever is due)"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+  issues: write   # to open an issue when a scheduled run fails
+
+# One run at a time, so a slow upload can never lead to a double post.
+concurrency:
+  group: x-posts
+  cancel-in-progress: false
+
+env:
+  TZ: Africa/Nairobi
+
+jobs:
+  post:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: x-posts
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: x-posts/requirements.txt
+
+      - name: Install
+        run: |
+          sudo apt-get install -y -qq fonts-inter > /dev/null || true
+          pip install -q -r requirements.txt
+
+      - name: Write Google Sheets service account to file
+        run: echo "${{ secrets.GSHEET_SERVICE_ACCOUNT }}" | base64 --decode > gsheets.json
+
+      - name: Post what is due
+        env:
+          X_API_KEY: ${{ secrets.X_API_KEY }}
+          X_API_SECRET: ${{ secrets.X_API_SECRET }}
+          X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
+          X_ACCESS_TOKEN_SECRET: ${{ secrets.X_ACCESS_TOKEN_SECRET }}
+          X_POSTS_SHEET_ID: ${{ vars.X_POSTS_SHEET_ID || '11Y_EoYqFJOTTubbBCQkh1gV3kbX1cVQHapdzbwWUXK4' }}
+          GSHEET_SERVICE_ACCOUNT_FILE: gsheets.json
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+          ONLY_ROW: ${{ inputs.only_row }}
+          OUT_DIR: out
+        run: python post.py
+
+      - name: Keep the videos with the run
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: x-posts-media
+          path: x-posts/out/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Remove the service account file
+        if: always()
+        run: rm -f gsheets.json
+
+      - name: Open an issue if this run failed
+        if: failure() && github.event_name == 'schedule'
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="Scheduled run failed: ${{ github.workflow }}"
+          url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          existing=$(gh issue list --repo "${{ github.repository }}" --state open --search "in:title \"$title\"" --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "${{ github.repository }}" --body "Failed again on $(date '+%Y-%m-%d %H:%M EAT'): $url"
+          else
+            gh issue create --repo "${{ github.repository }}" --title "$title" \
+              --body "The scheduled run on $(date '+%Y-%m-%d %H:%M EAT') failed: $url. The sheet row's note says why. Close this issue once it is fixed."
+          fi
