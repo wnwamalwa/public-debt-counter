@@ -6,8 +6,10 @@ How it works
      Each row is one post you write in advance:
         post_at   when to post, Nairobi time, e.g. 2026-11-02 09:00
         text      the tweet, with {placeholders} for live figures (see below)
-        visual    counter | per_person | chart | counter+chart | per_person+chart | none
-                  (chart: the animated debt-trend chart as the post's own video)
+        visual    counter | per_person | chart | terms | counter+chart | per_person+chart | none
+                  (chart: the animated debt-trend chart as the post's own video;
+                   terms: a picture of the debt by president, as on the
+                   dashboard, with the total projected to 31 December)
                   (+chart: also reply with the debt-trend chart and the
                    dashboard link; +card is accepted as the same thing)
         status    ready -> the job posts it. Anything else (draft, hold) is ignored.
@@ -40,6 +42,9 @@ Placeholders
   {projection_year_end}  KSh 13.91 trillion  total by 31 Dec at today's rate (as on the home page)
   {added_by_year_end}    KSh 197 billion    added between now and then
   {year_end}             31 Dec 2026        {days_to_year_end}  56
+  {ruto_added}  {ruto_per_year}      KSh 5.01 tn, KSh 1,199 bn: debt added under each
+  {uhuru_added} {uhuru_per_year}     president and the average a year, as in "Debt by
+  {kibaki_added} {kibaki_per_year}   president" on the dashboard (to today for Ruto)
   {link}              https://kenyadebtcounter.vercel.app/?utm_source=x&utm_content=20261029
                       (clickable; X charges more for posts with a link)
 
@@ -77,6 +82,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from render_video import render  # noqa: E402
 from render_chart import render_chart_video  # noqa: E402
+from render_terms import render_terms_chart, rows_with_live, term_stats  # noqa: E402
 
 EAT = timezone(timedelta(hours=3))
 SITE = "https://kenyadebtcounter.vercel.app"
@@ -89,7 +95,7 @@ CARD_REPLY = os.getenv("X_POSTS_CARD_REPLY",
                        "Since the August 2022 election, the net increase in overall public debt is "
                        "{since_increase} ({since_to} − {since_from}), approximately {since_per_year} a year, "
                        "without accounting for inflation.\n\nFor more insights, visit 👉 {link}")
-VISUALS = ("counter", "per_person", "chart", "counter+chart", "per_person+chart",
+VISUALS = ("counter", "per_person", "chart", "terms", "counter+chart", "per_person+chart",
            "counter+card", "per_person+card", "none", "")  # +card = +chart (older name)
 API_HISTORY = f"{SITE}/api/debt/historical"  # monthly total / domestic / external, newest first
 API_SUMMARY = f"{SITE}/api/debt/summary"
@@ -198,6 +204,37 @@ def since_baseline(history: list[dict] | None, f: dict, now: datetime) -> dict:
         "since_to": f"KSh {f['total'] / 1e12:.2f} tn",
         "since_per_year": f"KSh {inc / years / 1e12:.2f} tn" if years > 0.5 else None,
     }
+
+
+def live_row(f: dict, now: datetime) -> dict | None:
+    if not (f.get("domestic") and f.get("external")):
+        return None
+    return {"date": now.astimezone(EAT).strftime("%Y-%m-%d"), "total": f["total"],
+            "domestic": f["domestic"], "external": f["external"]}
+
+
+def terms_values(history: list[dict] | None, f: dict, now: datetime) -> dict:
+    """Debt added under each president and the average a year (as on the dashboard)."""
+    keys = [f"{n}_{k}" for n in ("ruto", "uhuru", "kibaki") for k in ("added", "per_year")]
+    out = {k: None for k in keys}
+    if not history:
+        return out
+    try:
+        for t in term_stats(rows_with_live(history, live_row(f, now))):
+            n = t["label"].lower()
+            if f"{n}_added" in out:
+                out[f"{n}_added"] = f"KSh {t['added'] / 1e12:.2f} tn"
+                out[f"{n}_per_year"] = f"KSh {t['per_year'] / 1e9:,.0f} bn"
+    except Exception as e:
+        log(f"Debt by president unavailable ({e}).")
+    return out
+
+
+def projection_point(f: dict, now: datetime) -> dict:
+    local = now.astimezone(EAT)
+    year_end = datetime(local.year, 12, 31, 23, 59, 59, tzinfo=EAT)
+    left = max(0.0, (year_end - now).total_seconds())
+    return {"date": f"{local.year}-12-31", "total": f["total"] + f["gps"] * left}
 
 
 def fetch_history() -> list[dict]:
@@ -507,6 +544,15 @@ def alt_text(style: str, f: dict, values: dict, as_of: str) -> str:
             "kenyadebtcounter.vercel.app")
 
 
+def terms_alt_text(v: dict) -> str:
+    parts = [f"{n}: {v.get(f'{n.lower()}_added')} added, about {v.get(f'{n.lower()}_per_year')} a year"
+             for n in ("Kibaki", "Uhuru", "Ruto") if v.get(f"{n.lower()}_added")]
+    return ("Chart of Kenya's public debt since 2000 by president (KSh trillion, not adjusted for inflation), "
+            "with total, domestic and external debt. " + "; ".join(parts) + ". Total today "
+            f"{v['debt_total']}; at today's pace about {v['projection_year_end']} by {v['year_end']} (dashed line). "
+            "Source: Kenya Debt Counter, IEA Kenya.")[:1000]
+
+
 def chart_alt_text(f: dict, values: dict) -> str:
     def part(name: str, key: str, shown: str) -> str:
         share = f" ({f[key] / f['gdp'] * 100:.1f}% of GDP)" if f.get("gdp") and f.get("debt_to_gdp") else ""
@@ -570,13 +616,14 @@ def main() -> int:
     add_gdp(figures)
     values = placeholders(figures, now)
     history, history_error = None, None
-    if any((sheet.rows[i].get("visual") or "").strip().lower().endswith(("chart", "+card"))
-           or "{since_" in sheet.rows[i].get("text", "") for i in due[:MAX_POSTS_PER_RUN]):
+    if any((sheet.rows[i].get("visual") or "").strip().lower().endswith(("chart", "+card", "terms"))
+           or re.search(r"\{(since|ruto|uhuru|kibaki)_", sheet.rows[i].get("text", "")) for i in due[:MAX_POSTS_PER_RUN]):
         try:
             history = fetch_history()
         except Exception as e:
             history_error = f"debt history unavailable ({e})"
     values.update(since_baseline(history, figures, now))
+    values.update(terms_values(history, figures, now))
     log(f"Figures ({figures['source']}): total {values['debt_total_full']}, "
         f"+{values['growth_per_second']}/s, per person {values['debt_per_person']}, "
         f"debt-to-GDP {values['debt_to_gdp'] or 'n/a'}, since {BASELINE_MONTH}: {values['since_increase'] or 'n/a'}")
@@ -616,7 +663,14 @@ def main() -> int:
                     log(f"{label}: chart reply unavailable ({e}); posting without the reply.")
                     reply = None
                     reply_skipped = f"Reply skipped: {str(e)[:150]}"
-            if visual == "chart":
+            image = None
+            if visual == "terms":
+                if history is None:
+                    raise RuntimeError(history_error or "debt history unavailable")
+                image = render_terms_chart(history, live_row(figures, now), projection_point(figures, now),
+                                           OUT_DIR / f"row{i + 2}_terms.png")
+                alt = terms_alt_text(values)
+            elif visual == "chart":
                 # The debt-trend chart is the post's own video (no reply).
                 if history is None:
                     raise RuntimeError(history_error or "debt history unavailable")
@@ -644,7 +698,8 @@ def main() -> int:
                 log(f"{label}: dry run, not posted.")
                 continue
             sheet.update(i, status="posting", note="Posting...")
-            media_id = upload_media(video, "video/mp4", "tweet_video") if video else None
+            media_id = (upload_media(video, "video/mp4", "tweet_video") if video
+                        else upload_media(image, "image/png", "tweet_image") if image else None)
             notes = [reply_skipped] if reply_skipped else []
             if media_id and alt:
                 try:
