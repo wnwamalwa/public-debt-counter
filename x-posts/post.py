@@ -7,8 +7,8 @@ How it works
         post_at   when to post, Nairobi time, e.g. 2026-11-02 09:00
         text      the tweet, with {placeholders} for live figures (see below)
         visual    counter | per_person | chart | terms | terms_real | counter+chart | per_person+chart | none
-                  (terms_real: the same picture in today's shillings, adjusted for
-                   inflation, with explanatory notes under the chart)
+                  (terms_real: the same picture adjusted for inflation with the GDP
+                   deflator, in today's prices, with explanatory notes under the chart)
                   (chart: the animated debt-trend chart as the post's own video;
                    terms: a picture of the debt by president, as on the
                    dashboard, with the total projected to 31 December)
@@ -48,7 +48,7 @@ Placeholders
   {uhuru_added} {uhuru_per_year}     president and the average a year, as in "Debt by
   {kibaki_added} {kibaki_per_year}   president" on the dashboard (to today for Ruto)
   {ruto_added_real} {ruto_per_year_real} ... {kibaki_per_year_real}  the same, adjusted for
-                      inflation (today's shillings; see cpi.py); {prices_month} = Oct 2026
+                      inflation with the GDP deflator (deflator.py); {prices_year} = 2026
   {link}              https://kenyadebtcounter.vercel.app/?utm_source=x&utm_content=20261029
                       (clickable; X charges more for posts with a link)
 
@@ -88,6 +88,7 @@ from render_video import render  # noqa: E402
 from render_chart import render_chart_video  # noqa: E402
 from render_terms import append_notes, render_terms_chart, rows_with_live, term_stats  # noqa: E402
 import cpi as cpi_mod  # noqa: E402
+import deflator as defl_mod  # noqa: E402
 
 EAT = timezone(timedelta(hours=3))
 SITE = "https://kenyadebtcounter.vercel.app"
@@ -235,7 +236,7 @@ def terms_values(history: list[dict] | None, f: dict, now: datetime) -> dict:
     return out
 
 
-REAL_KEYS = [f"{n}_{k}_real" for n in ("ruto", "uhuru", "kibaki") for k in ("added", "per_year")] + ["prices_month"]
+REAL_KEYS = [f"{n}_{k}_real" for n in ("ruto", "uhuru", "kibaki") for k in ("added", "per_year")] + ["prices_year"]
 
 
 def _bn(x: float) -> str:
@@ -247,56 +248,74 @@ def _tn(x: float) -> str:
 
 
 def real_terms(history: list[dict] | None, f: dict, now: datetime) -> dict | None:
-    """Debt by president in today's shillings: the values for the text, the
-    deflator for the picture and the notes printed under it."""
+    """Debt by president in today's prices, adjusted with the GDP deflator: the
+    values for the text, the deflator for the picture and the notes under it.
+    The CPI version is worked out too, for comparison in the notes."""
     if not history:
         return None
-    cpi, latest, src = cpi_mod.monthly_cpi()
-    deflate = cpi_mod.deflator(cpi, latest)
+    today = now.astimezone(EAT).date()
+    index, info = defl_mod.monthly_deflator(today)
+    deflate = defl_mod.deflator(index)
     rows = rows_with_live(history, live_row(f, now))
     real = [{"date": r["date"], **{k: deflate(r["date"], r[k]) for k in ("total", "domestic", "external")}}
             for r in rows]
     nom = {t["label"]: t for t in term_stats(rows)}
     rl = {t["label"]: t for t in term_stats(real)}
-    month = datetime(latest[0], latest[1], 1).strftime("%B %Y")
-    v = {"prices_month": datetime(latest[0], latest[1], 1).strftime("%b %Y")}
+    cpi_rl = {}
+    try:
+        cpi, latest, _ = cpi_mod.monthly_cpi()
+        cd = cpi_mod.deflator(cpi, latest)
+        cpi_rl = {t["label"]: t for t in term_stats(
+            [{"date": r["date"], "total": cd(r["date"], r["total"])} for r in rows])}
+    except Exception as e:
+        cpi = None
+        log(f"CPI comparison unavailable ({e}).")
+    year = today.year
+    last, growth = info["last_year"], info["growth"]
+    v = {"prices_year": str(year)}
     for n in ("Ruto", "Uhuru", "Kibaki"):
         if n in rl:
             v[f"{n.lower()}_added_real"] = _tn(rl[n]["added"])
             v[f"{n.lower()}_per_year_real"] = _bn(rl[n]["per_year"])
-    ruto_n, ruto_r, kib_n, kib_r = nom.get("Ruto"), rl.get("Ruto"), nom.get("Kibaki"), rl.get("Kibaki")
-    first_cpi = cpi.get((2005, 6))
+    kib_n, kib_r, ruto_n, ruto_r = nom.get("Kibaki"), rl.get("Kibaki"), nom.get("Ruto"), rl.get("Ruto")
     notes = [
-        f"Every month's debt is shown in {month} shillings: it is scaled up by how much consumer prices have "
-        f"risen since that month (the consumer price index, CPI)."
-        + (f" A shilling in mid-2005 bought about {cpi[latest] / first_cpi:.1f} times what it buys today." if first_cpi else ""),
-        "Net increase = debt in today's shillings when a president left office (Ruto: today) minus debt in today's "
-        "shillings when he took office; per year = that divided by the years in office. Moi is not assessed: the "
+        f"Every month's debt is shown in {year} prices, using Kenya's GDP deflator: the price level of everything "
+        "produced in the economy (nominal GDP divided by real GDP). It removes the effect of rising prices, so "
+        "debt from different years can be compared.",
+        "Why the GDP deflator and not consumer prices (CPI): the government repays its debt from taxes and other "
+        "revenue, which grow with prices across the whole economy, i.e. with nominal GDP, not only with what "
+        "households pay. The GDP deflator is the standard measure for public debt and is consistent with debt-to-GDP. "
+        "CPI covers household spending only and moves more with food and fuel prices."
+        + (f" With CPI the yearly figures would be Kibaki {_bn(cpi_rl['Kibaki']['per_year'])}, "
+           f"Uhuru {_bn(cpi_rl['Uhuru']['per_year'])} and Ruto {_bn(cpi_rl['Ruto']['per_year'])}."
+           if all(k in cpi_rl for k in ("Kibaki", "Uhuru", "Ruto")) else ""),
+        "Net increase = debt in today's prices when a president left office (Ruto: today) minus debt in today's "
+        "prices when he took office; per year = that divided by the years in office. Moi is not assessed: the "
         "monthly data start in 1999, partway through his term.",
     ]
     if kib_n and kib_r:
         notes.append(
             f"Kibaki: debt rose from {_tn(kib_n['from_total'])} to {_tn(kib_n['to_total'])} in shillings of the day, "
-            f"but prices roughly tripled over his term (including a 26% jump in 2008), so in today's money it was "
-            f"roughly unchanged ({_tn(kib_r['added'])}).")
+            f"but prices in the economy roughly tripled over his term, so in today's prices it was almost "
+            f"unchanged ({_tn(kib_r['added'])}).")
     if ruto_n and ruto_r:
         notes.append(
-            f"Ruto: the {_tn(ruto_n['from_total'])} he inherited in September 2022 is worth about "
-            f"{_tn(ruto_r['from_total'])} at today's prices, so the real rise is {_tn(ruto_r['added'])}, not "
+            f"Ruto: the {_tn(ruto_n['from_total'])} he inherited in September 2022 is about "
+            f"{_tn(ruto_r['from_total'])} in today's prices, so the real rise is {_tn(ruto_r['added'])}, not "
             f"{_tn(ruto_n['added'])}.")
     notes.append(
         "Not adjusted for inflation, the net increases are: "
         + ", ".join(f"{n} {_tn(nom[n]['added'])} ({_bn(nom[n]['per_year'])} a year)"
                     for n in ("Kibaki", "Uhuru", "Ruto") if n in nom) + ".")
     notes.append(
-        "Caveats: the figures still include exchange-rate effects on foreign debt, and depend on the price index "
-        "used (the GDP deflator would give somewhat different numbers). The projection to 31 December is at "
-        "today's prices.")
-    notes.append(
-        "Prices: KNBS consumer price index via the World Bank (annual, spread across the months) and CBK monthly "
-        "inflation rates for the latest months.")
-    log(f"Inflation adjustment: prices to {month} ({src}).")
-    return {"values": v, "deflate": deflate, "month": month, "notes": notes, "cpi": cpi}
+        f"Caveats: KNBS publishes the GDP deflator once a year; the latest is for {last}. After mid-{last} it is "
+        f"assumed to keep rising at {last}'s rate ({growth * 100:.1f}% a year) until KNBS publishes {last + 1}, so "
+        "the latest figures, and Ruto's most of all, are provisional. The figures still include exchange-rate "
+        "effects on foreign debt. The projection to 31 December is at today's prices.")
+    notes.append("Prices: KNBS GDP deflator via the World Bank (NY.GDP.DEFL.ZS); CPI for the comparison: KNBS via "
+                 "the World Bank and CBK monthly inflation.")
+    log(f"Inflation adjustment: GDP deflator ({info['source']}), last published {last}, then +{growth * 100:.1f}% a year.")
+    return {"values": v, "deflate": deflate, "year": year, "notes": notes, "index": index, "info": info, "cpi": cpi}
 
 
 def projection_point(f: dict, now: datetime) -> dict:
@@ -629,7 +648,7 @@ def terms_alt_text(v: dict, real: bool = False) -> str:
     sfx = "_real" if real else ""
     parts = [f"{n}: net increase {v.get(f'{n.lower()}_added{sfx}')}, about {v.get(f'{n.lower()}_per_year{sfx}')} a year"
              for n in ("Kibaki", "Uhuru", "Ruto") if v.get(f"{n.lower()}_added{sfx}")]
-    units = (f"adjusted for inflation, in {v.get('prices_month')} shillings" if real
+    units = (f"adjusted for inflation with the GDP deflator, in {v.get('prices_year')} prices" if real
              else "not adjusted for inflation")
     return (f"Chart of Kenya's public debt since 2000 by president (KSh trillion, {units}), "
             "with total, domestic and external debt. " + "; ".join(parts) + ". Total today "
@@ -712,12 +731,14 @@ def main() -> int:
     if any((sheet.rows[i].get("visual") or "").strip().lower() == "terms_real"
            or re.search(r"_real\}|\{prices_month\}", sheet.rows[i].get("text", "")) for i in due[:MAX_POSTS_PER_RUN]):
         real = real_terms(history, figures, now)
-        if real:  # keep the prices used in the sheet's 'cpi' tab, for checking
+        if real:  # keep the prices used in the sheet, for checking
             try:
-                sheet.write_tab("cpi", cpi_mod.SHEET_HEADER, cpi_mod.sheet_rows(real["cpi"]))
-                log(f"Wrote {len(real['cpi'])} months to the 'cpi' tab.")
+                sheet.write_tab("gdp_deflator", defl_mod.SHEET_HEADER, defl_mod.sheet_rows(real["index"], real["info"]))
+                if real.get("cpi"):
+                    sheet.write_tab("cpi", cpi_mod.SHEET_HEADER, cpi_mod.sheet_rows(real["cpi"]))
+                log("Updated the 'gdp_deflator' and 'cpi' tabs.")
             except Exception as e:
-                log(f"Could not update the 'cpi' tab ({e}); posting anyway.")
+                log(f"Could not update the price tabs ({e}); posting anyway.")
     values.update(real["values"] if real else {k: None for k in REAL_KEYS})
     log(f"Figures ({figures['source']}): total {values['debt_total_full']}, "
         f"+{values['growth_per_second']}/s, per person {values['debt_per_person']}, "
@@ -767,9 +788,9 @@ def main() -> int:
                 image = render_terms_chart(
                     history, live_row(figures, now), projection_point(figures, now),
                     OUT_DIR / f"row{i + 2}_terms_real.png", deflate=real["deflate"],
-                    title=f"Kenya's public debt by president, adjusted for inflation (KSh trillion, {real['month']} prices)",
+                    title=f"Kenya's public debt by president, adjusted with the GDP deflator (KSh trillion, {real['year']} prices)",
                     units_note="Source: Kenya Debt Counter (kenyadebtcounter.vercel.app), IEA Kenya, from CBK debt data "
-                               "and KNBS consumer prices. See the notes below.")
+                               "and the KNBS GDP deflator. See the notes below.")
                 append_notes(image, "How to read this chart", real["notes"])
                 alt = terms_alt_text(values, real=True)
             elif visual == "terms":
