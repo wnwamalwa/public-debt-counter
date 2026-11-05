@@ -37,6 +37,9 @@ Placeholders
   {since_from}        KSh 8.66 tn   total debt in August 2022
   {since_to}          KSh 13.57 tn  total debt now
   {since_per_year}    KSh 1.18 tn      average rise per year since then
+  {projection_year_end}  KSh 13.91 trillion  total by 31 Dec at today's rate (as on the home page)
+  {added_by_year_end}    KSh 197 billion    added between now and then
+  {year_end}             31 Dec 2026        {days_to_year_end}  56
   {link}              https://kenyadebtcounter.vercel.app/?utm_source=x&utm_content=20261029
                       (clickable; X charges more for posts with a link)
 
@@ -311,7 +314,17 @@ def trillion(x: float) -> str:
 
 def placeholders(f: dict, now: datetime) -> dict:
     share = f["domestic"] + f["external"]
+    # Year-end projection, as on the home page: today's total plus today's
+    # rate per second for every second left to 31 Dec, 23:59:59 EAT.
+    local = now.astimezone(EAT)
+    year_end = datetime(local.year, 12, 31, 23, 59, 59, tzinfo=EAT)
+    left = max(0.0, (year_end - now).total_seconds())
+    added = f["gps"] * left
     return {
+        "projection_year_end": trillion(f["total"] + added),
+        "added_by_year_end": f"KSh {added / 1e9:,.0f} billion",
+        "year_end": f"31 Dec {local.year}",
+        "days_to_year_end": f"{int(left // 86400)}",
         "debt_total": trillion(f["total"]),
         "debt_total_full": f"KSh {f['total']:,.0f}",
         "debt_per_person": f"KSh {round(f['per_person'], -2):,.0f}",
