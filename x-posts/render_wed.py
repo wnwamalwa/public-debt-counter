@@ -21,6 +21,8 @@ import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib import font_manager  # noqa: E402
 from PIL import Image  # noqa: E402
 
+from render_terms import append_notes  # noqa: E402
+
 HERE = Path(__file__).resolve().parent
 HEADER = "#15803d"
 DARK = "#0b0b0b"
@@ -127,7 +129,33 @@ def render_service(r: dict, out_png: Path) -> Path:
     out_png.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_png, dpi=200, facecolor="white")
     plt.close(fig)
+    append_notes(out_png, "How to read this chart", service_notes(r))
     return out_png
+
+
+def service_notes(r: dict) -> list[str]:
+    v = service_values(r)
+    t = r["total"]
+    pc = lambda x: f"{x / t * 100:.1f}%"
+    notes = [
+        f"Debt service is what the government paid on its public debt in {v['service_fy']} (July to June): principal "
+        "(repaying money borrowed earlier) plus interest (the cost of borrowing).",
+        "Each bar is a share of that total bill. External is debt owed to foreign lenders; domestic is mainly Treasury "
+        "bills and bonds sold in Kenya. The darker part of each bar is principal, the lighter part interest. The Total "
+        "bar adds the two rows, so the three totals read 100%.",
+        f"This year domestic debt took {pc(r['domestic'])} of the bill, and interest on domestic debt alone "
+        f"{pc(r['domestic_interest'])}: domestic debt costs more because it carries higher interest rates. "
+        f"Interest made up {v['service_interest_share']} of all debt service.",
+    ]
+    if v["service_pct_revenue"]:
+        notes.append(
+            f"The boxes compare the bill with the economy (GDP) and with ordinary revenue, mainly taxes. "
+            f"{v['service_pct_revenue']} of ordinary revenue means {v['service_per_100']} of every KSh 100 collected went "
+            "to debt service, leaving the rest of the budget to be paid from what remains and from new borrowing.")
+    notes.append(
+        "Much of the principal is repaid with new borrowing (refinancing), so the total overstates the cash the "
+        "Treasury must find from revenue; interest is the part that cannot be rolled over and is a pure cost.")
+    return notes
 
 
 def _fy_of(y: int) -> str:
@@ -238,18 +266,39 @@ def render_maturity(rows: list[dict], out_png: Path) -> Path:
     for side in ("top", "right", "left"):
         bx.spines[side].set_visible(False)
     bx.spines["bottom"].set_color("#c3c2b7")
-    # What else changed, in fairness
-    atm = d["atm"]
-    prev = sorted(y for y in atm if y < d["year"])
-    note = (f"Share due within a year: {v['mat_lt1_from']} ({v['mat_from_fy']}) to {v['mat_lt1']} ({v['mat_fy']}). "
-            f"Average time to maturity {v['atm_total']} years"
-            + (f" ({atm[prev[-1]]:.1f} a year earlier), after new long bonds including a 30-year issue." if prev else ".")
-            + (f" Principal to repay in {v['principal_due_fy']}: {v['principal_due']} (excl. T-bills)." if v["principal_due"] else "")
-            + " FY 2022/23 maturity mix not shown: its shares add up to 112.7% in the report.")
-    import textwrap
-    fig.text(0.04, 0.135, "\n".join(textwrap.wrap(note, 160)), fontsize=7.4, color="#1f2937", va="center",
-             linespacing=1.35)
     out_png.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_png, dpi=200, facecolor="white")
     plt.close(fig)
+    append_notes(out_png, "How to read these charts", maturity_notes(d))
     return out_png
+
+
+def maturity_notes(d: dict) -> list[str]:
+    v = maturity_values(d)
+    due = d["due"]
+    dom_low = min(due[:-1], key=lambda r: r["domestic"]) if len(due) > 1 else due[-1]
+    atm = d["atm"]
+    prev = sorted(y for y in atm if y < d["year"])
+    return [
+        "Left: each bar is Kenya's domestic Treasury bills and bonds at the end of June of that fiscal year, split by how "
+        "long they have left before they must be repaid. Red is due within a year; orange within one to five years; "
+        "blue in six years or more.",
+        "The more of the bar is red and orange, the more debt the government must repay soon, usually by borrowing "
+        "again at whatever interest rates are then on offer. This is refinancing risk: a jump in rates, or lenders "
+        "unwilling to lend, hits the budget quickly.",
+        "Right: debt falling due in the next 12 months as a share of GDP, for all public debt, domestic and external "
+        "debt. A rising line means more to repay or refinance each year relative to the size of the economy.",
+        f"What it shows: the share of domestic securities due within a year rose from {v['mat_lt1_from']} in "
+        f"{v['mat_from_fy']} to {v['mat_lt1']} in {v['mat_fy']}, and debt due within a year rose to {v['due1y_gdp']} of "
+        f"GDP from {v['due1y_gdp_low']} in {v['due1y_low_fy']}. The rise is in domestic debt ({v['due1y_dom_gdp']} of GDP, "
+        f"from {dom_low['domestic']:.1f}% in {_fy_of(dom_low['year'])}); external debt due within a year fell.",
+        f"At the same time the long end improved: {v['mat_ge10']} of domestic securities now have ten years or more to "
+        f"run, and the average time to maturity of all debt is {v['atm_total']} years"
+        + (f" ({atm[prev[-1]]:.1f} a year earlier)" if prev else "")
+        + ". The pressure is concentrated in short-term borrowing, mostly Treasury bills, which must be rolled over within "
+          "the year."
+        + (f" In {v['principal_due_fy']} the Treasury plans to repay {v['principal_due']} of principal, not counting "
+           "Treasury bills (Annual Borrowing Plan)." if v["principal_due"] else ""),
+        "Fiscal years run from July to June; figures are at end June. FY 2022/23 is missing from the left chart because "
+        "its shares add up to 112.7% in the report.",
+    ]
