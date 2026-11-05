@@ -6,7 +6,9 @@ How it works
      Each row is one post you write in advance:
         post_at   when to post, Nairobi time, e.g. 2026-11-02 09:00
         text      the tweet, with {placeholders} for live figures (see below)
-        visual    counter | per_person | chart | terms | counter+chart | per_person+chart | none
+        visual    counter | per_person | chart | terms | terms_real | counter+chart | per_person+chart | none
+                  (terms_real: the same picture in today's shillings, adjusted for
+                   inflation, with explanatory notes under the chart)
                   (chart: the animated debt-trend chart as the post's own video;
                    terms: a picture of the debt by president, as on the
                    dashboard, with the total projected to 31 December)
@@ -45,6 +47,8 @@ Placeholders
   {ruto_added}  {ruto_per_year}      KSh 5.01 tn, KSh 1,199 bn: debt added under each
   {uhuru_added} {uhuru_per_year}     president and the average a year, as in "Debt by
   {kibaki_added} {kibaki_per_year}   president" on the dashboard (to today for Ruto)
+  {ruto_added_real} {ruto_per_year_real} ... {kibaki_per_year_real}  the same, adjusted for
+                      inflation (today's shillings; see cpi.py); {prices_month} = Oct 2026
   {link}              https://kenyadebtcounter.vercel.app/?utm_source=x&utm_content=20261029
                       (clickable; X charges more for posts with a link)
 
@@ -82,7 +86,8 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from render_video import render  # noqa: E402
 from render_chart import render_chart_video  # noqa: E402
-from render_terms import render_terms_chart, rows_with_live, term_stats  # noqa: E402
+from render_terms import append_notes, render_terms_chart, rows_with_live, term_stats  # noqa: E402
+import cpi as cpi_mod  # noqa: E402
 
 EAT = timezone(timedelta(hours=3))
 SITE = "https://kenyadebtcounter.vercel.app"
@@ -95,7 +100,7 @@ CARD_REPLY = os.getenv("X_POSTS_CARD_REPLY",
                        "Since the August 2022 election, the net increase in overall public debt is "
                        "{since_increase} ({since_to} − {since_from}), approximately {since_per_year} a year, "
                        "without accounting for inflation.\n\nFor more insights, visit 👉 {link}")
-VISUALS = ("counter", "per_person", "chart", "terms", "counter+chart", "per_person+chart",
+VISUALS = ("counter", "per_person", "chart", "terms", "terms_real", "counter+chart", "per_person+chart",
            "counter+card", "per_person+card", "none", "")  # +card = +chart (older name)
 API_HISTORY = f"{SITE}/api/debt/historical"  # monthly total / domestic / external, newest first
 API_SUMMARY = f"{SITE}/api/debt/summary"
@@ -228,6 +233,70 @@ def terms_values(history: list[dict] | None, f: dict, now: datetime) -> dict:
     except Exception as e:
         log(f"Debt by president unavailable ({e}).")
     return out
+
+
+REAL_KEYS = [f"{n}_{k}_real" for n in ("ruto", "uhuru", "kibaki") for k in ("added", "per_year")] + ["prices_month"]
+
+
+def _bn(x: float) -> str:
+    return f"{'−' if x < 0 else ''}KSh {abs(x) / 1e9:,.0f} bn"
+
+
+def _tn(x: float) -> str:
+    return f"{'−' if x < 0 else ''}KSh {abs(x) / 1e12:.2f} tn"
+
+
+def real_terms(history: list[dict] | None, f: dict, now: datetime) -> dict | None:
+    """Debt by president in today's shillings: the values for the text, the
+    deflator for the picture and the notes printed under it."""
+    if not history:
+        return None
+    cpi, latest, src = cpi_mod.monthly_cpi()
+    deflate = cpi_mod.deflator(cpi, latest)
+    rows = rows_with_live(history, live_row(f, now))
+    real = [{"date": r["date"], **{k: deflate(r["date"], r[k]) for k in ("total", "domestic", "external")}}
+            for r in rows]
+    nom = {t["label"]: t for t in term_stats(rows)}
+    rl = {t["label"]: t for t in term_stats(real)}
+    month = datetime(latest[0], latest[1], 1).strftime("%B %Y")
+    v = {"prices_month": datetime(latest[0], latest[1], 1).strftime("%b %Y")}
+    for n in ("Ruto", "Uhuru", "Kibaki"):
+        if n in rl:
+            v[f"{n.lower()}_added_real"] = _tn(rl[n]["added"])
+            v[f"{n.lower()}_per_year_real"] = _bn(rl[n]["per_year"])
+    ruto_n, ruto_r, kib_n, kib_r = nom.get("Ruto"), rl.get("Ruto"), nom.get("Kibaki"), rl.get("Kibaki")
+    first_cpi = cpi.get((2005, 6))
+    notes = [
+        f"Every month's debt is shown in {month} shillings: it is scaled up by how much consumer prices have "
+        f"risen since that month (the consumer price index, CPI)."
+        + (f" A shilling in mid-2005 bought about {cpi[latest] / first_cpi:.1f} times what it buys today." if first_cpi else ""),
+        "Net increase = debt in today's shillings when a president left office (Ruto: today) minus debt in today's "
+        "shillings when he took office; per year = that divided by the years in office. Moi is not assessed: the "
+        "monthly data start in 1999, partway through his term.",
+    ]
+    if kib_n and kib_r:
+        notes.append(
+            f"Kibaki: debt rose from {_tn(kib_n['from_total'])} to {_tn(kib_n['to_total'])} in shillings of the day, "
+            f"but prices roughly tripled over his term (including a 26% jump in 2008), so in today's money it was "
+            f"roughly unchanged ({_tn(kib_r['added'])}).")
+    if ruto_n and ruto_r:
+        notes.append(
+            f"Ruto: the {_tn(ruto_n['from_total'])} he inherited in September 2022 is worth about "
+            f"{_tn(ruto_r['from_total'])} at today's prices, so the real rise is {_tn(ruto_r['added'])}, not "
+            f"{_tn(ruto_n['added'])}.")
+    notes.append(
+        "Not adjusted for inflation, the net increases are: "
+        + ", ".join(f"{n} {_tn(nom[n]['added'])} ({_bn(nom[n]['per_year'])} a year)"
+                    for n in ("Kibaki", "Uhuru", "Ruto") if n in nom) + ".")
+    notes.append(
+        "Caveats: the figures still include exchange-rate effects on foreign debt, and depend on the price index "
+        "used (the GDP deflator would give somewhat different numbers). The projection to 31 December is at "
+        "today's prices.")
+    notes.append(
+        "Prices: KNBS consumer price index via the World Bank (annual, spread across the months) and CBK monthly "
+        "inflation rates for the latest months.")
+    log(f"Inflation adjustment: prices to {month} ({src}).")
+    return {"values": v, "deflate": deflate, "month": month, "notes": notes}
 
 
 def projection_point(f: dict, now: datetime) -> dict:
@@ -544,10 +613,13 @@ def alt_text(style: str, f: dict, values: dict, as_of: str) -> str:
             "kenyadebtcounter.vercel.app")
 
 
-def terms_alt_text(v: dict) -> str:
-    parts = [f"{n}: {v.get(f'{n.lower()}_added')} added, about {v.get(f'{n.lower()}_per_year')} a year"
-             for n in ("Kibaki", "Uhuru", "Ruto") if v.get(f"{n.lower()}_added")]
-    return ("Chart of Kenya's public debt since 2000 by president (KSh trillion, not adjusted for inflation), "
+def terms_alt_text(v: dict, real: bool = False) -> str:
+    sfx = "_real" if real else ""
+    parts = [f"{n}: net increase {v.get(f'{n.lower()}_added{sfx}')}, about {v.get(f'{n.lower()}_per_year{sfx}')} a year"
+             for n in ("Kibaki", "Uhuru", "Ruto") if v.get(f"{n.lower()}_added{sfx}")]
+    units = (f"adjusted for inflation, in {v.get('prices_month')} shillings" if real
+             else "not adjusted for inflation")
+    return (f"Chart of Kenya's public debt since 2000 by president (KSh trillion, {units}), "
             "with total, domestic and external debt. " + "; ".join(parts) + ". Total today "
             f"{v['debt_total']}; at today's pace about {v['projection_year_end']} by {v['year_end']} (dashed line). "
             "Source: Kenya Debt Counter, IEA Kenya.")[:1000]
@@ -624,6 +696,11 @@ def main() -> int:
             history_error = f"debt history unavailable ({e})"
     values.update(since_baseline(history, figures, now))
     values.update(terms_values(history, figures, now))
+    real = None
+    if any((sheet.rows[i].get("visual") or "").strip().lower() == "terms_real"
+           or re.search(r"_real\}|\{prices_month\}", sheet.rows[i].get("text", "")) for i in due[:MAX_POSTS_PER_RUN]):
+        real = real_terms(history, figures, now)
+    values.update(real["values"] if real else {k: None for k in REAL_KEYS})
     log(f"Figures ({figures['source']}): total {values['debt_total_full']}, "
         f"+{values['growth_per_second']}/s, per person {values['debt_per_person']}, "
         f"debt-to-GDP {values['debt_to_gdp'] or 'n/a'}, since {BASELINE_MONTH}: {values['since_increase'] or 'n/a'}")
@@ -664,7 +741,20 @@ def main() -> int:
                     reply = None
                     reply_skipped = f"Reply skipped: {str(e)[:150]}"
             image = None
-            if visual == "terms":
+            if visual == "terms_real":
+                if history is None:
+                    raise RuntimeError(history_error or "debt history unavailable")
+                if not real:
+                    raise RuntimeError("prices for the inflation adjustment unavailable")
+                image = render_terms_chart(
+                    history, live_row(figures, now), projection_point(figures, now),
+                    OUT_DIR / f"row{i + 2}_terms_real.png", deflate=real["deflate"],
+                    title=f"Kenya's public debt by president, adjusted for inflation (KSh trillion, {real['month']} prices)",
+                    units_note="Source: Kenya Debt Counter (kenyadebtcounter.vercel.app), IEA Kenya, from CBK debt data "
+                               "and KNBS consumer prices. See the notes below.")
+                append_notes(image, "How to read this chart", real["notes"])
+                alt = terms_alt_text(values, real=True)
+            elif visual == "terms":
                 if history is None:
                     raise RuntimeError(history_error or "debt history unavailable")
                 image = render_terms_chart(history, live_row(figures, now), projection_point(figures, now),

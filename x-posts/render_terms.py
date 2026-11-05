@@ -103,15 +103,19 @@ def term_stats(rows: list[dict]) -> list[dict]:
             continue
         added = e_row["total"] - s_row["total"]
         out.append({"label": label, "fill": fill, "start": start, "end": end,
+                    "from_total": s_row["total"], "to_total": e_row["total"],
                     "partial": not start or _d(first["date"]) > _d(start),
                     "added": added, "per_year": added / years, "years": years})
     return out
 
 
 def render_terms_chart(history: list[dict], live: dict | None, projection: dict | None,
-                       out_png: Path) -> Path:
+                       out_png: Path, title: str | None = None, units_note: str | None = None,
+                       deflate=None) -> Path:
     """projection: {"date": "2026-12-31", "total": ...} drawn dashed from today."""
     rows = rows_with_live(history, live)
+    if deflate:  # e.g. to today's shillings: deflate(date, value) -> value
+        rows = [{"date": r["date"], **{k: deflate(r["date"], r[k]) for k, _, _ in SERIES}} for r in rows]
     stats = {t["label"]: t for t in term_stats(rows)}
     xs = [datetime.strptime(r["date"], "%Y-%m-%d") for r in rows]
     x0 = datetime(2000, 1, 1)
@@ -122,17 +126,17 @@ def render_terms_chart(history: list[dict], live: dict | None, projection: dict 
     fig = plt.figure(figsize=(8, 5), dpi=200)  # 1600 x 1000 px
     fig.patch.set_facecolor("white")
     fig.add_artist(plt.Rectangle((0, 0.915), 1, 0.085, transform=fig.transFigure, color=HEADER, zorder=5))
-    fig.text(0.5, 0.957, "Kenya's public debt by president and key episodes (KSh trillion, not adjusted for inflation)",
+    fig.text(0.5, 0.957, title or "Kenya's public debt by president and key episodes (KSh trillion, not adjusted for inflation)",
              fontsize=11.5, fontweight="bold", color="white", ha="center", va="center", zorder=6)
     logo_path = HERE / "assets" / "iea-kenya.png"
     if logo_path.exists():
         lax = fig.add_axes([0.01, 0.015, 0.075, 0.075])
         lax.imshow(Image.open(logo_path))
         lax.axis("off")
-    fig.text(0.095, 0.052, "Source: Kenya Debt Counter (kenyadebtcounter.vercel.app), Institute of Economic Affairs Kenya, "
-             "from Central Bank of Kenya data.", fontsize=7.2, color=GREY, va="center")
-    fig.text(0.095, 0.027, "Net increase: change in total public debt over each term (Ruto: to today). Moi not assessed "
-             "(data start mid-term). Red dashes: today's pace continued to 31 Dec.", fontsize=7.2, color=GREY, va="center")
+    fig.text(0.095, 0.052, units_note or ("Source: Kenya Debt Counter (kenyadebtcounter.vercel.app), Institute of Economic Affairs Kenya, "
+             "from Central Bank of Kenya data."), fontsize=7.2, color=GREY, va="center")
+    fig.text(0.095, 0.027, "Net increase: change in total public debt over each term (Ruto: to today). Moi not assessed. "
+             "Red dashes: today's pace continued to 31 Dec.", fontsize=7.2, color=GREY, va="center")
 
     ax = fig.add_axes([0.055, 0.13, 0.555, 0.765])
     top = max(max(r["total"] for r in rows), projection["total"] if projection else 0) / 1e12
@@ -164,9 +168,10 @@ def render_terms_chart(history: list[dict], live: dict | None, projection: dict 
         t = stats.get(label)
         if t and not t["partial"]:
             ax.text(mid, y_top - 1.2, "Net increase", ha="center", va="top", fontsize=6.5, color="#334155")
-            ax.text(mid, y_top - 1.7, f"+KSh {t['added'] / 1e12:.2f} tn", ha="center", va="top",
+            sign = "+" if t["added"] >= 0 else "−"
+            ax.text(mid, y_top - 1.7, f"{sign}KSh {abs(t['added']) / 1e12:.2f} tn", ha="center", va="top",
                     fontsize=7.5, fontweight="bold", color="#1e293b")
-            ax.text(mid, y_top - 2.3, f"{t['per_year'] / 1e9:,.0f} bn/yr", ha="center", va="top",
+            ax.text(mid, y_top - 2.3, f"{'' if t['per_year'] >= 0 else chr(0x2212)}{abs(t['per_year']) / 1e9:,.0f} bn/yr", ha="center", va="top",
                     fontsize=7, color="#334155")
 
     # The three series, and their values today at the right
@@ -184,7 +189,7 @@ def render_terms_chart(history: list[dict], live: dict | None, projection: dict 
         labels[0] = (rows[-1]["total"] / 1e12, f"{rows[-1]['total'] / 1e12:.2f} Total\ntoday", SERIES[0][2])
         # The projection is only a few weeks wide on a 25-year chart, so call it out.
         ax.annotate(f"Projected, {pdate:%-d %b %Y}:\nKSh {p:.2f} trillion\n(today's pace continued)",
-                    xy=(x_proj, p), xytext=(datetime(2016, 1, 1), y_top - 5.4), fontsize=7.5,
+                    xy=(x_proj, p), xytext=(datetime(2007, 7, 1), y_top - 5.4), fontsize=7.5,
                     fontweight="bold", color="#b91c1c", ha="center", va="center", linespacing=1.15,
                     bbox=dict(boxstyle="round,pad=0.35", fc="white", ec="#b91c1c", lw=0.9),
                     arrowprops=dict(arrowstyle="-|>", color="#b91c1c", lw=1.0,
@@ -239,3 +244,35 @@ def render_terms_chart(history: list[dict], live: dict | None, projection: dict 
     fig.savefig(out_png, dpi=200, facecolor="white")
     plt.close(fig)
     return out_png
+
+
+def append_notes(png: Path, heading: str, notes: list[str]) -> Path:
+    """Add a panel of numbered notes under the chart (same width), so the
+    explanation travels with the picture instead of using up the post's 280 characters."""
+    import textwrap
+    width_in = 8
+    wrapped = [textwrap.wrap(n, 150) for n in notes]
+    n_lines = sum(len(w) for w in wrapped)
+    height_in = 0.42 + 0.155 * n_lines + 0.05 * len(notes)
+    plt.rcParams.update({"font.family": _font_family()})
+    fig = plt.figure(figsize=(width_in, height_in), dpi=200)
+    fig.patch.set_facecolor("#f8faf9")
+    y = 1 - 0.16 / height_in
+    fig.text(0.035, y, heading, fontsize=9, fontweight="bold", color=DARK, va="top")
+    y -= 0.27 / height_in
+    for i, lines in enumerate(wrapped, 1):
+        fig.text(0.035, y, f"{i}.", fontsize=7.3, fontweight="bold", color=DARK, va="top")
+        fig.text(0.055, y, "\n".join(lines), fontsize=7.3, color="#1f2937", va="top", linespacing=1.3)
+        y -= (0.155 * len(lines) + 0.05) / height_in
+    notes_png = png.with_name(png.stem + "_notes.png")
+    fig.savefig(notes_png, dpi=200, facecolor=fig.get_facecolor())
+    plt.close(fig)
+    top, bottom = Image.open(png).convert("RGB"), Image.open(notes_png).convert("RGB")
+    if bottom.width != top.width:
+        bottom = bottom.resize((top.width, round(bottom.height * top.width / bottom.width)))
+    out = Image.new("RGB", (top.width, top.height + bottom.height), "white")
+    out.paste(top, (0, 0))
+    out.paste(bottom, (0, top.height))
+    out.save(png)
+    notes_png.unlink(missing_ok=True)
+    return png
