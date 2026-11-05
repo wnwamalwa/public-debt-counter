@@ -6,7 +6,10 @@ How it works
      Each row is one post you write in advance:
         post_at   when to post, Nairobi time, e.g. 2026-11-02 09:00
         text      the tweet, with {placeholders} for live figures (see below)
-        visual    counter | per_person | chart | terms | terms_real | counter+chart | per_person+chart | none
+        visual    counter | per_person | chart | terms | terms_real | service | maturity |
+                  counter+chart | per_person+chart | none
+                  (service: debt service in the latest fiscal year; maturity: when
+                   the debt falls due, end June; both as on Chart 6 of the dashboard)
                   (terms_real: the same picture adjusted for inflation with the GDP
                    deflator, in today's prices, with explanatory notes under the chart)
                   (chart: the animated debt-trend chart as the post's own video;
@@ -16,9 +19,9 @@ How it works
                    dashboard link; +card is accepted as the same thing)
         status    ready -> the job posts it. Anything else (draft, hold) is ignored.
         posted_at, post_url, note   filled in by the job
-        repeat    (optional) weekly -> once the row has gone out (or failed, or
-                  was missed), the job adds the same post again 7 days later
-                  as a new "ready" row. To stop the series, set that next
+        repeat    (optional) weekly or fortnightly -> once the row has gone out (or
+                  failed, or was missed), the job adds the same post again 7 or
+                  14 days later as a new "ready" row. To stop the series, set that next
                   row's status to anything other than ready (e.g. stop).
   2. When a "ready" row is due, it fetches the live figures the website shows
      (kenyadebtcounter.vercel.app/api/debt/summary, falling back to Supabase),
@@ -49,6 +52,12 @@ Placeholders
   {kibaki_added} {kibaki_per_year}   president" on the dashboard (to today for Ruto)
   {ruto_added_real} {ruto_per_year_real} ... {kibaki_per_year_real}  the same, adjusted for
                       inflation with the GDP deflator (deflator.py); {prices_year} = 2026
+  service visual:  {service_fy} {service_total} {service_principal} {service_interest}
+                   {service_interest_share} {service_domestic_share} {service_pct_gdp}
+                   {service_pct_revenue} {service_per_100}
+  maturity visual (trend): {mat_fy} {mat_end} {mat_lt1} {mat_lt1_from} {mat_from_fy} {mat_within5}
+                   {due1y_gdp} {due1y_gdp_low} {due1y_low_fy} {due1y_dom_gdp} {due1y_dom_from}
+                   {atm_total} {atm_domestic} {principal_due} {principal_due_fy}
   {link}              https://kenyadebtcounter.vercel.app/?utm_source=x&utm_content=20261029
                       (clickable; X charges more for posts with a link)
 
@@ -89,6 +98,7 @@ from render_chart import render_chart_video  # noqa: E402
 from render_terms import append_notes, render_terms_chart, rows_with_live, term_stats  # noqa: E402
 import cpi as cpi_mod  # noqa: E402
 import deflator as defl_mod  # noqa: E402
+import render_wed  # noqa: E402
 
 EAT = timezone(timedelta(hours=3))
 SITE = "https://kenyadebtcounter.vercel.app"
@@ -101,10 +111,12 @@ CARD_REPLY = os.getenv("X_POSTS_CARD_REPLY",
                        "Since the August 2022 election, the net increase in overall public debt is "
                        "{since_increase} ({since_to} − {since_from}), approximately {since_per_year} a year, "
                        "without accounting for inflation.\n\nFor more insights, visit 👉 {link}")
-VISUALS = ("counter", "per_person", "chart", "terms", "terms_real", "counter+chart", "per_person+chart",
+VISUALS = ("counter", "per_person", "chart", "terms", "terms_real", "service", "maturity", "counter+chart", "per_person+chart",
            "counter+card", "per_person+card", "none", "")  # +card = +chart (older name)
 API_HISTORY = f"{SITE}/api/debt/historical"  # monthly total / domestic / external, newest first
 API_SUMMARY = f"{SITE}/api/debt/summary"
+API_SERVICE = f"{SITE}/api/debt/service"  # debt service by fiscal year (APDR)
+API_INPUTS = f"{SITE}/api/debt/site-inputs"  # hand-entered report figures (maturity)
 API_RATIO = f"{SITE}/api/debt/ratio"  # last row = today's live debt-to-GDP
 X_API = os.getenv("X_API_BASE", "https://api.x.com")
 SHEET_TAB = "x_posts"
@@ -316,6 +328,46 @@ def real_terms(history: list[dict] | None, f: dict, now: datetime) -> dict | Non
                  "the World Bank and CBK monthly inflation.")
     log(f"Inflation adjustment: GDP deflator ({info['source']}), last published {last}, then +{growth * 100:.1f}% a year.")
     return {"values": v, "deflate": deflate, "year": year, "notes": notes, "index": index, "info": info, "cpi": cpi}
+
+
+SERVICE_KEYS = ["service_fy", "service_total", "service_principal", "service_interest", "service_interest_share",
+                "service_domestic_share", "service_pct_gdp", "service_pct_revenue", "service_per_100"]
+MATURITY_KEYS = ["mat_fy", "mat_end", "mat_lt1", "mat_lt1_from", "mat_from_fy", "mat_within5", "mat_ge10",
+                 "due1y_gdp", "due1y_gdp_low", "due1y_low_fy", "due1y_dom_gdp", "due1y_dom_from", "due_from_fy",
+                 "atm_total", "atm_domestic", "principal_due", "principal_due_fy"]
+
+
+def _get_json(url: str) -> dict:
+    r = requests.get(url, timeout=60, headers={"User-Agent": "kdc-x-posts"})
+    r.raise_for_status()
+    j = r.json()
+    if j.get("success") is False:
+        raise RuntimeError(j.get("error") or "the site returned no data")
+    return j.get("data", j)
+
+
+def wednesday_data(rows: list[dict]) -> dict:
+    """Debt service / maturity figures, fetched only when a due row needs them."""
+    out = {"values": {k: None for k in SERVICE_KEYS + MATURITY_KEYS}, "service": None, "inputs": None, "errors": {}}
+    need = lambda name, keys: any((r.get("visual") or "").strip().lower() == name
+                                  or any("{" + k + "}" in r.get("text", "") for k in keys) for r in rows)
+    if need("service", SERVICE_KEYS):
+        try:
+            years = [y for y in _get_json(API_SERVICE)["years"] if y.get("total")]
+            out["service"] = sorted(years, key=lambda y: y["fy_start"])[-1]
+            out["values"].update(render_wed.service_values(out["service"]))
+        except Exception as e:
+            out["errors"]["service"] = f"debt service figures unavailable ({e})"
+    if need("maturity", MATURITY_KEYS):
+        try:
+            out["inputs"] = _get_json(API_INPUTS)["rows"]
+            d = render_wed.maturity_data(out["inputs"])
+            if not d:
+                raise RuntimeError("no maturity figures in the site inputs")
+            out["values"].update(render_wed.maturity_values(d))
+        except Exception as e:
+            out["errors"]["maturity"] = f"maturity figures unavailable ({e})"
+    return out
 
 
 def projection_point(f: dict, now: datetime) -> dict:
@@ -566,20 +618,22 @@ def schedule_next(sheet: "Sheet", i: int, now: datetime) -> str:
     """For a row with repeat = weekly, add the same post 7 days after its
     post_at (skipping weeks already past) as a new ready row. Returns a note."""
     row = sheet.rows[i]
-    if (row.get("repeat") or "").strip().lower() != "weekly":
+    rep = (row.get("repeat") or "").strip().lower()
+    step = {"weekly": 7, "fortnightly": 14}.get(rep)
+    if not step:
         return ""
     try:
-        nxt = parse_eat(row["post_at"]) + timedelta(days=7)
+        nxt = parse_eat(row["post_at"]) + timedelta(days=step)
     except Exception:
         return "Not repeated: could not read post_at."
     while nxt <= now:
-        nxt += timedelta(days=7)
+        nxt += timedelta(days=step)
     when = nxt.astimezone(EAT).strftime("%Y-%m-%d %H:%M")
     sheet.append({"post_at": when, "text": row.get("text", ""), "visual": row.get("visual", ""),
-                  "status": "ready", "repeat": "weekly",
-                  "note": "Weekly repeat. Set status to stop to end the series."})
-    log(f"Row {i + 2}: next weekly post added for {when}.")
-    return f"Next weekly post: {when}"
+                  "status": "ready", "repeat": rep,
+                  "note": f"{rep.capitalize()} repeat. Set status to stop to end the series."})
+    log(f"Row {i + 2}: next {rep} post added for {when}.")
+    return f"Next {rep} post: {when}"
 
 
 # ---------------------------------------------------------------- X API
@@ -727,6 +781,8 @@ def main() -> int:
             history_error = f"debt history unavailable ({e})"
     values.update(since_baseline(history, figures, now))
     values.update(terms_values(history, figures, now))
+    wed = wednesday_data([sheet.rows[i] for i in due[:MAX_POSTS_PER_RUN]])
+    values.update(wed["values"])
     real = None
     if any((sheet.rows[i].get("visual") or "").strip().lower() == "terms_real"
            or re.search(r"_real\}|\{prices_month\}", sheet.rows[i].get("text", "")) for i in due[:MAX_POSTS_PER_RUN]):
@@ -780,7 +836,26 @@ def main() -> int:
                     reply = None
                     reply_skipped = f"Reply skipped: {str(e)[:150]}"
             image = None
-            if visual == "terms_real":
+            if visual == "service":
+                if not wed["service"]:
+                    raise RuntimeError(wed["errors"].get("service", "debt service figures unavailable"))
+                image = render_wed.render_service(wed["service"], OUT_DIR / f"row{i + 2}_service.png")
+                v = values
+                alt = (f"Chart of Kenya's public debt service in {v['service_fy']}, split into external and domestic, "
+                       f"principal and interest, as % of the total: {v['service_total']} in all ({v['service_principal']} "
+                       f"principal, {v['service_interest']} interest), {v['service_pct_gdp']} of GDP and "
+                       f"{v['service_pct_revenue']} of ordinary revenue. Source: National Treasury, Annual Public Debt Report.")
+            elif visual == "maturity":
+                if not wed["inputs"]:
+                    raise RuntimeError(wed["errors"].get("maturity", "maturity figures unavailable"))
+                image = render_wed.render_maturity(wed["inputs"], OUT_DIR / f"row{i + 2}_maturity.png")
+                v = values
+                alt = (f"Two charts of Kenya's repayment pressure, {v['due_from_fy']} to {v['mat_fy']}. Left: domestic "
+                       f"Treasury bills and bonds by time left to run; the share due within a year went from "
+                       f"{v['mat_lt1_from']} to {v['mat_lt1']}. Right: debt due within a year as % of GDP, rising to "
+                       f"{v['due1y_gdp']} (domestic {v['due1y_dom_gdp']}) from {v['due1y_gdp_low']} in {v['due1y_low_fy']}. "
+                       "Source: National Treasury, Annual Public Debt Report.")
+            elif visual == "terms_real":
                 if history is None:
                     raise RuntimeError(history_error or "debt history unavailable")
                 if not real:

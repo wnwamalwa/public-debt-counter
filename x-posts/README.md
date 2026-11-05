@@ -14,12 +14,12 @@ tab (e.g. Communications) approves every post.
 |---|---|
 | `post_at` | When to post, Nairobi time: `2026-11-10 09:00` (it goes out within the hour) |
 | `text` | The post, with `{placeholders}` for live figures (below). Max 280 characters once filled in. |
-| `visual` | `counter` (video of the ticking total), `per_person`, `chart` (the animated debt-trend chart as the post's video), `counter+chart` (adds a reply with the animated debt-trend chart), `per_person+chart`, or `none` |
+| `visual` | `counter` (video of the ticking total), `per_person`, `chart` (the animated debt-trend chart as the post's video), `terms` / `terms_real` (debt by president, plain or adjusted with the GDP deflator), `service` (debt service in the latest fiscal year), `maturity` (when the debt falls due, end June), `counter+chart` (adds a reply with the animated debt-trend chart), `per_person+chart`, or `none` |
 | `status` | `draft` while writing; **`ready`** to post. The job then sets `posting`, `posted`, `failed` or `missed`. |
 | `posted_at`, `post_url`, `note` | Filled in by the job. |
-| `repeat` | Optional. `weekly`: after the row goes out, the job adds the same post 7 days later as a new `ready` row, so it repeats every week. To stop, set the next row's status to `stop`. |
+| `repeat` | Optional. `weekly` or `fortnightly`: after the row goes out, the job adds the same post 7 (or 14) days later as a new `ready` row, so it repeats every week. To stop, set the next row's status to `stop`. |
 
-Two weekly posts are set up this way: Monday 09:00, the counter video
+Wednesdays alternate between the debt service and maturity pictures: two rows a week apart, each `fortnightly`. Other weekly posts: Monday 09:00, the counter video
 (`visual` `counter`); Tuesday 09:00, the debt-trend chart (`visual` `chart`,
 text about the rise since August 2022). Both have `repeat` `weekly`.
 
