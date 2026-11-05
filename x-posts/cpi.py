@@ -64,9 +64,13 @@ def _rates() -> tuple[dict[str, float], str]:
     return dict(RATES_FALLBACK), "stored copy"
 
 
+LAST_RUN: dict = {}  # filled by monthly_cpi(): annual, rates, sources (for sheet_rows)
+
+
 def monthly_cpi() -> tuple[dict[tuple[int, int], float], tuple[int, int], str]:
     annual, a_src = _annual()
     rates, r_src = _rates()
+    LAST_RUN.update(annual=annual, rates=rates, a_src=a_src, r_src=r_src)
     pts = sorted((y + 0.5, math.log(v)) for y, v in annual.items())
     cpi: dict[tuple[int, int], float] = {}
     for y in range(int(pts[0][0]), int(pts[-1][0]) + 1):
@@ -95,3 +99,37 @@ def deflator(cpi: dict[tuple[int, int], float], latest: tuple[int, int]):
         k = (int(d[:4]), int(d[5:7]))
         return v * base / cpi.get(k, base)
     return f
+
+
+SHEET_HEADER = ["month", "cpi_2010_100", "inflation_12m_pct", "source", "annual_cpi_world_bank"]
+
+
+def sheet_rows(cpi: dict[tuple[int, int], float]) -> list[list]:
+    """The monthly series as rows for the 'cpi' tab of the Google Sheet."""
+    annual, rates = LAST_RUN.get("annual", {}), LAST_RUN.get("rates", {})
+    out = []
+    for (y, m) in sorted(cpi):
+        key = f"{y}-{m:02d}"
+        prev = cpi.get((y - 1, m))
+        interpolated = (y, m) in _interpolated_months(annual)
+        if interpolated or not prev:
+            src = "CPI: World Bank annual (KNBS), spread across the months"
+        else:
+            src = "CPI: same month a year earlier x (1 + CBK 12-month inflation)"
+        if key in rates:
+            rate = rates[key]
+            src += "; inflation: CBK"
+        else:
+            rate = round((cpi[(y, m)] / prev - 1) * 100, 2) if prev else ""
+            if rate != "":
+                src += "; inflation: computed from the CPI column"
+        out.append([key, round(cpi[(y, m)], 3), rate, src, round(annual[y], 3) if m == 7 and y in annual else ""])
+    return out
+
+
+def _interpolated_months(annual: dict[int, float]) -> set[tuple[int, int]]:
+    if not annual:
+        return set()
+    lo, hi = min(annual) + 0.5, max(annual) + 0.5
+    return {(y, m) for y in range(min(annual), max(annual) + 1) for m in range(1, 13)
+            if lo <= y + (m - 0.5) / 12 <= hi}

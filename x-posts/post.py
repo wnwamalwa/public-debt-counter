@@ -296,7 +296,7 @@ def real_terms(history: list[dict] | None, f: dict, now: datetime) -> dict | Non
         "Prices: KNBS consumer price index via the World Bank (annual, spread across the months) and CBK monthly "
         "inflation rates for the latest months.")
     log(f"Inflation adjustment: prices to {month} ({src}).")
-    return {"values": v, "deflate": deflate, "month": month, "notes": notes}
+    return {"values": v, "deflate": deflate, "month": month, "notes": notes, "cpi": cpi}
 
 
 def projection_point(f: dict, now: datetime) -> dict:
@@ -477,7 +477,7 @@ class Sheet:
             return
         import gspread
         gc = gspread.service_account(filename=os.environ["GSHEET_SERVICE_ACCOUNT_FILE"])
-        sh = gc.open_by_key(os.environ["X_POSTS_SHEET_ID"])
+        sh = self.sh = gc.open_by_key(os.environ["X_POSTS_SHEET_ID"])
         try:
             self.ws = sh.worksheet(SHEET_TAB)
         except gspread.WorksheetNotFound:
@@ -512,6 +512,18 @@ class Sheet:
         for k, v in fields.items():
             cells.append(gspread.Cell(i + 2, self.col[k], v))
         self.ws.update_cells(cells, value_input_option="USER_ENTERED")
+
+    def write_tab(self, name: str, header: list[str], rows: list[list]) -> None:
+        """Replace a whole tab (created if missing) with header + rows."""
+        if DRY_RUN or self.local:
+            return
+        import gspread
+        try:
+            ws = self.sh.worksheet(name)
+        except gspread.WorksheetNotFound:
+            ws = self.sh.add_worksheet(name, rows=len(rows) + 10, cols=len(header))
+        ws.clear()
+        ws.update([header] + rows, "A1", value_input_option="RAW")
 
     def _write_local(self) -> None:
         with open(self.local, "w", newline="", encoding="utf-8") as fh:
@@ -700,6 +712,12 @@ def main() -> int:
     if any((sheet.rows[i].get("visual") or "").strip().lower() == "terms_real"
            or re.search(r"_real\}|\{prices_month\}", sheet.rows[i].get("text", "")) for i in due[:MAX_POSTS_PER_RUN]):
         real = real_terms(history, figures, now)
+        if real:  # keep the prices used in the sheet's 'cpi' tab, for checking
+            try:
+                sheet.write_tab("cpi", cpi_mod.SHEET_HEADER, cpi_mod.sheet_rows(real["cpi"]))
+                log(f"Wrote {len(real['cpi'])} months to the 'cpi' tab.")
+            except Exception as e:
+                log(f"Could not update the 'cpi' tab ({e}); posting anyway.")
     values.update(real["values"] if real else {k: None for k in REAL_KEYS})
     log(f"Figures ({figures['source']}): total {values['debt_total_full']}, "
         f"+{values['growth_per_second']}/s, per person {values['debt_per_person']}, "

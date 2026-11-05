@@ -145,7 +145,9 @@ def render_terms_chart(history: list[dict], live: dict | None, projection: dict 
     ax.set_xlim(x0, x_end)
     ax.set_yticks(range(0, y_top + 1, 2))
     ax.set_yticklabels([str(t) for t in range(0, y_top + 1, 2)], fontsize=8.5, color="#898781")
-    ax.xaxis.set_major_locator(mdates.YearLocator(4))
+    # Year labels counted back from the latest year, so the current year is always labelled
+    last_year = xs[-1].year
+    ax.set_xticks([datetime(y, 1, 1) for y in range(last_year, x0.year - 1, -4) if datetime(y, 1, 1) >= x0][::-1])
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
     ax.tick_params(axis="x", labelsize=8.5, colors="#898781", length=0, pad=5)
     ax.tick_params(axis="y", length=0, pad=4)
