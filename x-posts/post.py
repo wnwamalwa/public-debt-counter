@@ -6,7 +6,8 @@ How it works
      Each row is one post you write in advance:
         post_at   when to post, Nairobi time, e.g. 2026-11-02 09:00
         text      the tweet, with {placeholders} for live figures (see below)
-        visual    counter | per_person | counter+chart | per_person+chart | none
+        visual    counter | per_person | chart | counter+chart | per_person+chart | none
+                  (chart: the animated debt-trend chart as the post's own video)
                   (+chart: also reply with the debt-trend chart and the
                    dashboard link; +card is accepted as the same thing)
         status    ready -> the job posts it. Anything else (draft, hold) is ignored.
@@ -85,7 +86,7 @@ CARD_REPLY = os.getenv("X_POSTS_CARD_REPLY",
                        "Since the August 2022 election, the net increase in overall public debt is "
                        "{since_increase} ({since_to} − {since_from}), approximately {since_per_year} a year, "
                        "without accounting for inflation.\n\nFor more insights, visit 👉 {link}")
-VISUALS = ("counter", "per_person", "counter+chart", "per_person+chart",
+VISUALS = ("counter", "per_person", "chart", "counter+chart", "per_person+chart",
            "counter+card", "per_person+card", "none", "")  # +card = +chart (older name)
 API_HISTORY = f"{SITE}/api/debt/historical"  # monthly total / domestic / external, newest first
 API_SUMMARY = f"{SITE}/api/debt/summary"
@@ -556,7 +557,7 @@ def main() -> int:
     add_gdp(figures)
     values = placeholders(figures, now)
     history, history_error = None, None
-    if any((sheet.rows[i].get("visual") or "").strip().lower().endswith(("+chart", "+card"))
+    if any((sheet.rows[i].get("visual") or "").strip().lower().endswith(("chart", "+card"))
            or "{since_" in sheet.rows[i].get("text", "") for i in due[:MAX_POSTS_PER_RUN]):
         try:
             history = fetch_history()
@@ -579,7 +580,7 @@ def main() -> int:
                 raise ValueError(f"text is {x_length(text)} characters after filling in figures; X allows 280")
             visual = (row.get("visual") or "none").strip().lower()
             if visual not in VISUALS:
-                raise ValueError("visual must be counter, per_person, counter+chart, per_person+chart "
+                raise ValueError("visual must be counter, per_person, chart, counter+chart, per_person+chart "
                                  f"or none (got '{visual}')")
             with_chart = visual.endswith(("+chart", "+card"))
             style = visual.split("+")[0]
@@ -602,7 +603,18 @@ def main() -> int:
                     log(f"{label}: chart reply unavailable ({e}); posting without the reply.")
                     reply = None
                     reply_skipped = f"Reply skipped: {str(e)[:150]}"
-            if style in ("counter", "per_person"):
+            if visual == "chart":
+                # The debt-trend chart is the post's own video (no reply).
+                if history is None:
+                    raise RuntimeError(history_error or "debt history unavailable")
+                today = now.astimezone(EAT).strftime("%Y-%m-%d")
+                live = {"date": today, "total": figures["total"],
+                        "domestic": figures["domestic"], "external": figures["external"]}
+                video, _ = render_chart_video(history,
+                                              live if live["domestic"] and live["external"] else None,
+                                              OUT_DIR / f"row{i + 2}_chart.mp4", gdp=figures.get("gdp"))
+                alt = chart_alt_text(figures, values)
+            elif style in ("counter", "per_person"):
                 as_of = "As at " + now.astimezone(EAT).strftime("%-d %b %Y, %H:%M EAT")
                 video, gif = render(style, figures["total"], figures["gps"], figures["per_person"],
                                     OUT_DIR / f"row{i + 2}.mp4", as_of=as_of,

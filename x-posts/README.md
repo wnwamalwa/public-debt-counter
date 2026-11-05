@@ -14,13 +14,14 @@ tab (e.g. Communications) approves every post.
 |---|---|
 | `post_at` | When to post, Nairobi time: `2026-11-10 09:00` (it goes out within the hour) |
 | `text` | The post, with `{placeholders}` for live figures (below). Max 280 characters once filled in. |
-| `visual` | `counter` (video of the ticking total), `per_person`, `counter+chart` (adds a reply with the animated debt-trend chart), `per_person+chart`, or `none` |
+| `visual` | `counter` (video of the ticking total), `per_person`, `chart` (the animated debt-trend chart as the post's video), `counter+chart` (adds a reply with the animated debt-trend chart), `per_person+chart`, or `none` |
 | `status` | `draft` while writing; **`ready`** to post. The job then sets `posting`, `posted`, `failed` or `missed`. |
 | `posted_at`, `post_url`, `note` | Filled in by the job. |
 | `repeat` | Optional. `weekly`: after the row goes out, the job adds the same post 7 days later as a new `ready` row, so it repeats every week. To stop, set the next row's status to `stop`. |
 
-The Monday post is one such row: `post_at` a Monday at 09:00, `visual`
-`counter+chart`, `repeat` `weekly`.
+Two weekly posts are set up this way: Monday 09:00, the counter video
+(`visual` `counter`); Tuesday 09:00, the debt-trend chart (`visual` `chart`,
+text about the rise since August 2022). Both have `repeat` `weekly`.
 
 A row more than 6 hours late is marked `missed` rather than posted (set a new
 time and `ready` again to post it).
