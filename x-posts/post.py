@@ -6,7 +6,7 @@ How it works
      Each row is one post you write in advance:
         post_at   when to post, Nairobi time, e.g. 2026-11-02 09:00
         text      the tweet, with {placeholders} for live figures (see below)
-        visual    counter | per_person | chart | terms | terms_real | service | maturity |
+        visual    counter | per_person | chart | terms | terms_real | service | maturity | lenders |
                   counter+chart | per_person+chart | none
                   (service: debt service in the latest fiscal year; maturity: when
                    the debt falls due, end June; both as on Chart 6 of the dashboard)
@@ -55,6 +55,8 @@ Placeholders
   service visual:  {service_fy} {service_total} {service_principal} {service_interest}
                    {service_interest_share} {service_domestic_share} {service_pct_gdp}
                    {service_pct_revenue} {service_per_100}
+  lenders visual:  {lenders_as_of} {lenders_fy} {lenders_total} {dom_total} {ext_total} {dom_share}
+                   {ext_share} {banks} {banks_share} {pensions} {ida} {isb} {china} {usd_share}
   maturity visual (trend): {mat_fy} {mat_end} {mat_lt1} {mat_lt1_from} {mat_from_fy} {mat_within5}
                    {due1y_gdp} {due1y_gdp_low} {due1y_low_fy} {due1y_dom_gdp} {due1y_dom_from}
                    {atm_total} {atm_domestic} {principal_due} {principal_due_fy}
@@ -99,6 +101,7 @@ from render_terms import append_notes, render_terms_chart, rows_with_live, term_
 import cpi as cpi_mod  # noqa: E402
 import deflator as defl_mod  # noqa: E402
 import render_wed  # noqa: E402
+import render_fri  # noqa: E402
 
 EAT = timezone(timedelta(hours=3))
 SITE = "https://kenyadebtcounter.vercel.app"
@@ -111,7 +114,7 @@ CARD_REPLY = os.getenv("X_POSTS_CARD_REPLY",
                        "Since the August 2022 election, the net increase in overall public debt is "
                        "{since_increase} ({since_to} − {since_from}), approximately {since_per_year} a year, "
                        "without accounting for inflation.\n\nFor more insights, visit 👉 {link}")
-VISUALS = ("counter", "per_person", "chart", "terms", "terms_real", "service", "maturity", "counter+chart", "per_person+chart",
+VISUALS = ("counter", "per_person", "chart", "terms", "terms_real", "service", "maturity", "lenders", "counter+chart", "per_person+chart",
            "counter+card", "per_person+card", "none", "")  # +card = +chart (older name)
 API_HISTORY = f"{SITE}/api/debt/historical"  # monthly total / domestic / external, newest first
 API_SUMMARY = f"{SITE}/api/debt/summary"
@@ -783,6 +786,7 @@ def main() -> int:
     values.update(terms_values(history, figures, now))
     wed = wednesday_data([sheet.rows[i] for i in due[:MAX_POSTS_PER_RUN]])
     values.update(wed["values"])
+    values.update(render_fri.lenders_values())  # APDR year-end figures, kept in render_fri.py
     real = None
     if any((sheet.rows[i].get("visual") or "").strip().lower() == "terms_real"
            or re.search(r"_real\}|\{prices_month\}", sheet.rows[i].get("text", "")) for i in due[:MAX_POSTS_PER_RUN]):
@@ -812,7 +816,8 @@ def main() -> int:
                 raise ValueError(f"text is {x_length(text)} characters after filling in figures; X allows 280")
             visual = (row.get("visual") or "none").strip().lower()
             if visual not in VISUALS:
-                raise ValueError("visual must be counter, per_person, chart, counter+chart, per_person+chart "
+                raise ValueError("visual must be counter, per_person, chart, terms, terms_real, service, maturity, lenders, "
+                                 "counter+chart, per_person+chart "
                                  f"or none (got '{visual}')")
             with_chart = visual.endswith(("+chart", "+card"))
             style = visual.split("+")[0]
@@ -845,6 +850,14 @@ def main() -> int:
                        f"principal and interest, as % of the total: {v['service_total']} in all ({v['service_principal']} "
                        f"principal, {v['service_interest']} interest), {v['service_pct_gdp']} of GDP and "
                        f"{v['service_pct_revenue']} of ordinary revenue. Source: National Treasury, Annual Public Debt Report.")
+            elif visual == "lenders":
+                image = render_fri.render_lenders(OUT_DIR / f"row{i + 2}_lenders.png")
+                v = values
+                alt = (f"Bar chart of who Kenya owes, end {v['lenders_as_of']}: public debt of {v['lenders_total']} by "
+                       f"lender, {v['dom_share']} owed at home ({v['dom_total']}) and {v['ext_share']} abroad "
+                       f"({v['ext_total']}). Largest lenders: commercial banks {v['banks']}, World Bank IDA {v['ida']}, "
+                       f"Eurobond holders {v['isb']}, pension funds {v['pensions']}, China {v['china']}. "
+                       "Source: National Treasury, Annual Public Debt Report.")
             elif visual == "maturity":
                 if not wed["inputs"]:
                     raise RuntimeError(wed["errors"].get("maturity", "maturity figures unavailable"))
