@@ -95,7 +95,7 @@ export async function loadSupabase(month, upTo = null) {
       month: mo,
       pageviews: rows.reduce((s, r) => s + (Number(r.pageviews) || 0), 0),
       visitors: rows.reduce((s, r) => s + (Number(r.visitors) || 0), 0),
-      hasData: rows.length > 0,
+      hasData: rows.some((r) => Number(r.visitors) > 0),
       kenya: ke.filter((r) => String(r.date).startsWith(mo)).reduce((s, r) => s + (Number(r.visitors) || 0), 0),
     });
   }
@@ -118,9 +118,12 @@ export async function loadSupabase(month, upTo = null) {
     `select=dimension,value,pageviews,visitors&dimension=in.(country,device)&date=lte.${iso(last)}`,
   );
   const allByDate = new Map(allDays.map((d) => [String(d.date).slice(0, 10), d]));
+  // Tracking began on the first day with any visitors: the first copy also
+  // wrote empty rows for the days before the site was tracked (September).
+  const firstSeen = allDays.find((d) => Number(d.visitors) > 0);
   const allDaily = [];
-  if (allDays.length) {
-    for (let d = new Date(`${String(allDays[0].date).slice(0, 10)}T00:00:00Z`); d <= last; d.setUTCDate(d.getUTCDate() + 1)) {
+  if (firstSeen) {
+    for (let d = new Date(`${String(firstSeen.date).slice(0, 10)}T00:00:00Z`); d <= last; d.setUTCDate(d.getUTCDate() + 1)) {
       const r = allByDate.get(iso(d));
       allDaily.push({ date: iso(d), pageviews: Number(r?.pageviews) || 0, visitors: Number(r?.visitors) || 0 });
     }
