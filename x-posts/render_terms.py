@@ -26,7 +26,7 @@ HERE = Path(__file__).resolve().parent
 
 # The dashboard's terms and colours (webapp/src/components/DebtNominalChart.tsx)
 REGIMES = [
-    ("Moi", None, "2002-12-30", "#ede9fe"),
+    ("Moi", None, "2002-12-30", None),  # not assessed: the data start partway through the term
     ("Kibaki", "2002-12-30", "2013-04-09", "#dcfce7"),
     ("Uhuru", "2013-04-09", "2022-09-13", "#fef3c7"),
     ("Ruto", "2022-09-13", None, "#fce7f3"),
@@ -131,8 +131,8 @@ def render_terms_chart(history: list[dict], live: dict | None, projection: dict 
         lax.axis("off")
     fig.text(0.095, 0.052, "Source: Kenya Debt Counter (kenyadebtcounter.vercel.app), Institute of Economic Affairs Kenya, "
              "from Central Bank of Kenya data.", fontsize=7.2, color=GREY, va="center")
-    fig.text(0.095, 0.027, "Debt added: from the month a president took office to the month they left (Ruto: to today). "
-             "Red dashes: today's pace continued to 31 Dec.", fontsize=7.2, color=GREY, va="center")
+    fig.text(0.095, 0.027, "Net increase: change in total public debt over each term (Ruto: to today). Moi not assessed "
+             "(data start mid-term). Red dashes: today's pace continued to 31 Dec.", fontsize=7.2, color=GREY, va="center")
 
     ax = fig.add_axes([0.055, 0.13, 0.555, 0.765])
     top = max(max(r["total"] for r in rows), projection["total"] if projection else 0) / 1e12
@@ -153,18 +153,20 @@ def render_terms_chart(history: list[dict], live: dict | None, projection: dict 
 
     # Shaded terms with their labels
     for label, start, end, fill in REGIMES:
+        if not fill:  # left blank (Moi: not assessed)
+            continue
         a = max(x0, datetime.strptime(start, "%Y-%m-%d")) if start else x0
         b = datetime.strptime(end, "%Y-%m-%d") if end else x_end
         ax.axvspan(a, b, color=fill, zorder=0, lw=0)
-        if start:
-            ax.axvline(a, color="#c3c2b7", lw=0.8, zorder=1)
+        ax.axvline(a, color="#c3c2b7", lw=0.8, zorder=1)
         mid = a + (b - a) / 2
         ax.text(mid, y_top - 0.45, label, ha="center", va="top", fontsize=9.5, fontweight="bold", color=DARK)
         t = stats.get(label)
         if t and not t["partial"]:
-            ax.text(mid, y_top - 1.25, f"+KSh {t['added'] / 1e12:.2f} tn", ha="center", va="top",
+            ax.text(mid, y_top - 1.2, "Net increase", ha="center", va="top", fontsize=6.5, color="#334155")
+            ax.text(mid, y_top - 1.7, f"+KSh {t['added'] / 1e12:.2f} tn", ha="center", va="top",
                     fontsize=7.5, fontweight="bold", color="#1e293b")
-            ax.text(mid, y_top - 1.85, f"{t['per_year'] / 1e9:,.0f} bn/yr", ha="center", va="top",
+            ax.text(mid, y_top - 2.3, f"{t['per_year'] / 1e9:,.0f} bn/yr", ha="center", va="top",
                     fontsize=7, color="#334155")
 
     # The three series, and their values today at the right
