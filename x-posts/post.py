@@ -11,6 +11,10 @@ How it works
                    dashboard link; +card is accepted as the same thing)
         status    ready -> the job posts it. Anything else (draft, hold) is ignored.
         posted_at, post_url, note   filled in by the job
+        repeat    (optional) weekly -> once the row has gone out (or failed, or
+                  was missed), the job adds the same post again 7 days later
+                  as a new "ready" row. To stop the series, set that next
+                  row's status to anything other than ready (e.g. stop).
   2. When a "ready" row is due, it fetches the live figures the website shows
      (kenyadebtcounter.vercel.app/api/debt/summary, falling back to Supabase),
      fills in the placeholders, renders the video if asked, and posts to X.
@@ -89,6 +93,7 @@ API_RATIO = f"{SITE}/api/debt/ratio"  # last row = today's live debt-to-GDP
 X_API = os.getenv("X_API_BASE", "https://api.x.com")
 SHEET_TAB = "x_posts"
 HEADERS = ["post_at", "text", "visual", "status", "posted_at", "post_url", "note"]
+OPTIONAL = ["repeat"]  # added to the tab automatically if it is missing
 MAX_POSTS_PER_RUN = int(os.getenv("MAX_POSTS_PER_RUN", "2"))
 MISSED_AFTER_HOURS = float(os.getenv("MISSED_AFTER_HOURS", "6"))
 DRY_RUN = os.getenv("DRY_RUN", "false").lower() in ("true", "1", "yes")
@@ -240,6 +245,12 @@ def figures_from_summary(s: dict, source: str) -> dict:
 
 
 def parse_eat(v: str) -> datetime:
+    # Google Sheets turns "2026-11-09 09:00" into a date and shows it as
+    # "2026-11-09 9:00" or "2026-11-09 9:00:00": accept those too.
+    m = re.fullmatch(r"\s*(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?\s*", v)
+    if m:
+        y, mo, d, h, mi, sec = (int(x) if x else 0 for x in m.groups())
+        return datetime(y, mo, d, h, mi, sec, tzinfo=EAT)
     v = v.strip().replace(" ", "T")
     if re.fullmatch(r"\d{4}-\d{2}-\d{2}", v):
         v += "T00:00:00"
@@ -358,7 +369,15 @@ class Sheet:
         missing = [h for h in HEADERS if h not in header]
         if missing:
             raise RuntimeError(f"Sheet tab '{SHEET_TAB}' is missing columns: {missing}")
-        self.col = {h: header.index(h) + 1 for h in HEADERS}
+        for h in OPTIONAL:
+            if h not in header:
+                if self.ws.col_count < len(header) + 1:
+                    self.ws.add_cols(len(header) + 1 - self.ws.col_count)
+                self.ws.update_cell(1, len(header) + 1, h)
+                header.append(h)
+                log(f"Added the '{h}' column to the '{SHEET_TAB}' tab.")
+        self.header = header
+        self.col = {h: header.index(h) + 1 for h in HEADERS + OPTIONAL}
         self.rows = [dict(zip(header, r + [""] * (len(header) - len(r)))) for r in values[1:]]
 
     def update(self, i: int, **fields) -> None:
@@ -366,16 +385,50 @@ class Sheet:
             return
         self.rows[i].update(fields)
         if self.local:
-            with open(self.local, "w", newline="", encoding="utf-8") as fh:
-                w = csv.DictWriter(fh, fieldnames=HEADERS)
-                w.writeheader()
-                w.writerows(self.rows)
+            self._write_local()
             return
         cells = []
         import gspread
         for k, v in fields.items():
             cells.append(gspread.Cell(i + 2, self.col[k], v))
         self.ws.update_cells(cells, value_input_option="USER_ENTERED")
+
+    def _write_local(self) -> None:
+        with open(self.local, "w", newline="", encoding="utf-8") as fh:
+            w = csv.DictWriter(fh, fieldnames=HEADERS + OPTIONAL, extrasaction="ignore")
+            w.writeheader()
+            w.writerows(self.rows)
+
+    def append(self, row: dict) -> None:
+        """Add a new row at the bottom (used for the next post of a weekly series)."""
+        if DRY_RUN:
+            return
+        self.rows.append(row)
+        if self.local:
+            self._write_local()
+            return
+        # RAW, so "2026-11-09 09:00" stays text and is read back exactly.
+        self.ws.append_row([row.get(h, "") for h in self.header], value_input_option="RAW")
+
+
+def schedule_next(sheet: "Sheet", i: int, now: datetime) -> str:
+    """For a row with repeat = weekly, add the same post 7 days after its
+    post_at (skipping weeks already past) as a new ready row. Returns a note."""
+    row = sheet.rows[i]
+    if (row.get("repeat") or "").strip().lower() != "weekly":
+        return ""
+    try:
+        nxt = parse_eat(row["post_at"]) + timedelta(days=7)
+    except Exception:
+        return "Not repeated: could not read post_at."
+    while nxt <= now:
+        nxt += timedelta(days=7)
+    when = nxt.astimezone(EAT).strftime("%Y-%m-%d %H:%M")
+    sheet.append({"post_at": when, "text": row.get("text", ""), "visual": row.get("visual", ""),
+                  "status": "ready", "repeat": "weekly",
+                  "note": "Weekly repeat. Set status to stop to end the series."})
+    log(f"Row {i + 2}: next weekly post added for {when}.")
+    return f"Next weekly post: {when}"
 
 
 # ---------------------------------------------------------------- X API
@@ -487,7 +540,8 @@ def main() -> int:
         if when > now:
             continue
         if now - when > timedelta(hours=MISSED_AFTER_HOURS):
-            sheet.update(i, status="missed", note=f"Not posted: more than {MISSED_AFTER_HOURS:g} hours late. Set a new time and status 'ready' to post it.")
+            nxt = schedule_next(sheet, i, now)
+            sheet.update(i, status="missed", note=f"Not posted: more than {MISSED_AFTER_HOURS:g} hours late. Set a new time and status 'ready' to post it." + (f" {nxt}" if nxt else ""))
             log(f"Row {i + 2}: missed.")
             continue
         due.append(i)
@@ -587,6 +641,9 @@ def main() -> int:
                 except Exception as e:  # the main post is out; never repost it
                     notes.append(f"Posted, but the chart reply failed: {str(e)[:300]}")
                     log(f"{label}: {notes[-1]}")
+            nxt = schedule_next(sheet, i, now)
+            if nxt:
+                notes.append(nxt)
             note = " | ".join(notes)
             sheet.update(i, status="posted", posted_at=now.astimezone(EAT).strftime("%Y-%m-%d %H:%M"),
                          post_url=url, note=note)
@@ -596,7 +653,8 @@ def main() -> int:
             failures += 1
             log(f"{label}: FAILED - {e}")
             summary_line(f"**{label} failed:** {e}")
-            sheet.update(i, status="failed", note=str(e)[:450])
+            nxt = schedule_next(sheet, i, now)  # a failed week never ends the series
+            sheet.update(i, status="failed", note=(str(e)[:400] + (f" | {nxt}" if nxt else "")))
     if len(due) > MAX_POSTS_PER_RUN:
         log(f"{len(due) - MAX_POSTS_PER_RUN} more due; they will go in the next run.")
     return 1 if failures else 0
