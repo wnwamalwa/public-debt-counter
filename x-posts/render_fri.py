@@ -118,8 +118,9 @@ def lenders_notes(d: dict = LENDERS) -> list[str]:
     others = ", ".join(n if n[0] in "JFT" else n.lower() for n, _ in d["external_pct"][d["shown_external"]:])
     cur = ", ".join(f"{n} {p:g}%" for n, p in d["currency_pct"][:3])
     return [
-        f"Each bar is what the Government owed that lender at the end of {d['as_of']}, in KSh billion. Blue bars are "
-        f"lenders in Kenya (domestic debt); orange bars are lenders abroad (external debt).",
+        f"Each bar is what the Government owed that lender at the end of {d['as_of']}, in KSh billion. Left (blue): "
+        f"lenders in Kenya (domestic debt). Right (orange): lenders abroad (external debt). Both panels use the same "
+        "scale, so bars can be compared across them.",
         f"The strip at the top splits the total of {_money(total)}: {v['dom_share']} owed at home ({v['dom_total']}) "
         f"and {v['ext_share']} abroad ({v['ext_total']}).",
         f"Domestic lenders mostly hold Treasury bills and bonds. Commercial banks are the largest single lender, with "
@@ -140,55 +141,55 @@ def lenders_notes(d: dict = LENDERS) -> list[str]:
 def render_lenders(out_png: Path, d: dict = LENDERS) -> Path:
     v = lenders_values(d)
     total = d["domestic_total"] + d["external_total"]
-    rows = _bars(d)
+    ext = _external(d)
+    k = d["shown_external"]
+    dom_rows = sorted(d["domestic"], key=lambda r: -r[1])
+    ext_rows = sorted(ext[:k], key=lambda r: -r[1]) + [("Other external lenders", sum(a for _, a in ext[k:]))]
     take = (f"{v['dom_share']} of Kenya's public debt is owed to lenders at home. Commercial banks are the "
             f"largest single lender ({v['banks']}).")
     fig = _frame(f"Who Kenya owes: public debt by lender, end {d['as_of']} (KSh billion)", take, [
         f"Source: {d['source']}. Domestic: by holder; external: by creditor, incl. guaranteed debt.",
-        "Kenya Debt Counter (kenyadebtcounter.vercel.app), Institute of Economic Affairs Kenya.",
+        "Kenya Debt Counter (kenyadebtcounter.vercel.app), Institute of Economic Affairs Kenya. Both panels use the same scale.",
     ])
-    fig.set_size_inches(8, 6.4)
+    fig.set_size_inches(8, 5.6)
     # split strip
-    sx = fig.add_axes([0.25, 0.775, 0.66, 0.035])
+    sx = fig.add_axes([0.2, 0.765, 0.75, 0.04])
     dp = d["domestic_total"] / total * 100
     sx.barh(0, dp, color=DOM, height=1, edgecolor="white", lw=1.2)
     sx.barh(0, 100 - dp, left=dp, color=EXT, height=1, edgecolor="white", lw=1.2)
-    sx.text(dp / 2, 0, f"At home {dp:.1f}%  ·  {v['dom_total']}", ha="center", va="center", fontsize=8.2,
+    sx.text(dp / 2, 0, f"At home {dp:.1f}%", ha="center", va="center", fontsize=8.4, fontweight="bold", color="white")
+    sx.text(dp + (100 - dp) / 2, 0, f"Abroad {100 - dp:.1f}%", ha="center", va="center", fontsize=8.4,
             fontweight="bold", color="white")
-    sx.text(dp + (100 - dp) / 2, 0, f"Abroad {100 - dp:.1f}%  ·  {v['ext_total']}", ha="center", va="center",
-            fontsize=8.2, fontweight="bold", color="white")
     sx.set_xlim(0, 100)
     sx.axis("off")
-    fig.text(0.24, 0.792, f"Total {_money(total)}", ha="right", va="center", fontsize=8.6, fontweight="bold",
+    fig.text(0.19, 0.785, f"Total {_money(total)}", ha="right", va="center", fontsize=8.6, fontweight="bold",
              color=DARK)
-    # lenders
-    ax = fig.add_axes([0.25, 0.135, 0.66, 0.6])
-    n = len(rows)
-    for i, (name, amt, kind) in enumerate(rows):
-        y = n - 1 - i
-        c = DOM if kind == "dom" else EXT
-        ax.barh(y, amt, color=c, height=0.68)
-        ax.text(amt + 25, y, f"{amt:,.0f}", ha="left", va="center", fontsize=7.8, fontweight="bold", color=DARK)
-        ax.text(-40, y, name, ha="right", va="center", fontsize=8.2, color=DARK,
-                fontweight="bold" if amt >= 1000 else "normal")
-    top = max(a for _, a, _ in rows)
-    ax.set_xlim(0, top * 1.1)
-    ax.set_ylim(-0.6, n - 0.4)
-    ax.set_yticks([])
-    ticks = list(range(0, int(top * 1.1) + 1, 500))
-    ax.set_xticks(ticks)
-    ax.set_xticklabels([f"{t:,}" for t in ticks], fontsize=7.5, color="#64748b")
-    ax.tick_params(axis="x", length=0)
-    ax.grid(True, axis="x", color="#e5e7eb", lw=0.8)
-    ax.set_axisbelow(True)
-    for side in ("top", "right", "left", "bottom"):
-        ax.spines[side].set_visible(False)
-    # legend
-    lx = 0.25
-    for label, c in (("Lender in Kenya (domestic)", DOM), ("Lender abroad (external)", EXT)):
-        fig.add_artist(plt.Rectangle((lx, 0.744), 0.014, 0.014, transform=fig.transFigure, color=c))
-        fig.text(lx + 0.02, 0.751, label, fontsize=7.6, color=GREY, va="center")
-        lx += 0.25
+    top = max(a for _, a in dom_rows + ext_rows)
+    n = max(len(dom_rows), len(ext_rows))
+    panels = [(0.2, dom_rows, DOM, f"Lenders in Kenya: {v['dom_total']}"),
+              (0.695, ext_rows, EXT, f"Lenders abroad: {v['ext_total']}")]
+    for x0, rows, c, head in panels:
+        ax = fig.add_axes([x0, 0.165, 0.255, 0.5])
+        fig.text(x0 - 0.17 if x0 < 0.5 else x0 - 0.185, 0.705, head, fontsize=9.6, fontweight="bold", color=c,
+                 va="center")
+        for i, (name, amt) in enumerate(rows):
+            y = n - 1 - i
+            ax.barh(y, amt, color=c, height=0.68)
+            ax.text(amt + top * 0.02, y, f"{amt:,.0f}", ha="left", va="center", fontsize=7.6, fontweight="bold",
+                    color=DARK)
+            ax.text(-top * 0.025, y, name, ha="right", va="center", fontsize=7.9, color=DARK,
+                    fontweight="bold" if amt >= 1000 else "normal")
+        ax.set_xlim(0, top * 1.17)
+        ax.set_ylim(-0.6, n - 0.4)
+        ax.set_yticks([])
+        ticks = list(range(0, int(top) + 1, 1000))
+        ax.set_xticks(ticks)
+        ax.set_xticklabels([f"{t:,}" for t in ticks], fontsize=7.3, color="#64748b")
+        ax.tick_params(axis="x", length=0)
+        ax.grid(True, axis="x", color="#e5e7eb", lw=0.8)
+        ax.set_axisbelow(True)
+        for side in ("top", "right", "left", "bottom"):
+            ax.spines[side].set_visible(False)
     out_png.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_png, dpi=200, facecolor="white")
     plt.close(fig)
