@@ -1,6 +1,6 @@
 name: X posts (IEA Kenya account)
 
-# Every hour at :07 Nairobi time, checks the "x_posts" tab of the IEA Google
+# Twice an hour (at :07 and :37), checks the "x_posts" tab of the IEA Google
 # Sheet for rows with status "ready" whose post_at time has come, fills in the
 # live figures, renders the counter video / debt-trend chart, and posts them
 # from the IEA Kenya X account. The result (posted / failed / missed, the post
@@ -17,8 +17,12 @@ name: X posts (IEA Kenya account)
 # GSHEET_SERVICE_ACCOUNT, SUPABASE_URL and SUPABASE_SERVICE_ROLE (fallback).
 # Optional repository variable X_POSTS_SHEET_ID to use a different sheet.
 on:
+  # Twice an hour so that a run GitHub delays or drops is picked up by the next
+  # one; a post due at 9:00 goes out at about 9:07, or 9:37 at the latest.
+  # Rows already posted are skipped, and the concurrency group below stops two
+  # runs from overlapping, so nothing is posted twice.
   schedule:
-    - cron: "7 * * * *"
+    - cron: "7,37 * * * *"
   workflow_dispatch:
     inputs:
       dry_run:
