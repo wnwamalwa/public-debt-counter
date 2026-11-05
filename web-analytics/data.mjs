@@ -1,6 +1,6 @@
 // Data for the monthly readership report.
 //
-//   loadSupabase(month)  reads web_daily + web_daily_breakdown (filled daily
+//   loadSupabase(month, upTo)  reads web_daily + web_daily_breakdown (filled daily
 //                        from Vercel Web Analytics by ../web_analytics.R)
 //   loadSample(month)    made-up but realistic figures, for the layout sample
 //
@@ -11,6 +11,8 @@
 //   monthly: [{ month, pageviews, visitors, kenya }]    last 12 months, oldest first (kenya = readers in Kenya)
 //   breakdown: { page|country|referrer|device|utm_source: [{ value, pageviews, visitors }] }  this month
 //   prevBreakdown: { page|country: [...] }              last month, for "change" columns
+//   allTime: { daily: [{ date, pageviews, visitors }],   every day since tracking began, up to the report's last day
+//              breakdown: { country|device: [...] } }   the same period
 // }
 
 const DIMENSIONS = ["page", "country", "referrer", "device", "utm_source"];
@@ -57,11 +59,15 @@ function sumBy(rows, key) {
   return [...m.values()].sort((a, b) => b.visitors - a.visitors || b.pageviews - a.pageviews);
 }
 
-export async function loadSupabase(month) {
+// upTo (a day of the month, or null): stop at that day, for a month-to-date
+// report, and compare with the same days of the previous month (prevToDate,
+// prevBreakdown) instead of the whole previous month.
+export async function loadSupabase(month, upTo = null) {
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE) {
     throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE must be set (or use --sample).");
   }
-  const { first, last } = monthRange(month);
+  const { first, last: monthEnd } = monthRange(month);
+  const last = upTo ? new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), Math.min(upTo, monthEnd.getUTCDate()))) : monthEnd;
   const yearStart = monthRange(addMonths(month, -11)).first;
   const prev = monthRange(addMonths(month, -1));
 
@@ -94,13 +100,39 @@ export async function loadSupabase(month) {
     });
   }
   const inMonth = (r, mo) => String(r.date).startsWith(mo);
+  const prevMonth = addMonths(month, -1);
+  const sameDays = (r) => !upTo || Number(String(r.date).slice(8, 10)) <= upTo;
+  const prevToDate = days
+    .filter((d) => inMonth(d, prevMonth) && sameDays(d))
+    .reduce((s, r) => s + (Number(r.visitors) || 0), 0);
   const breakdown = {};
   const prevBreakdown = {};
   for (const dim of DIMENSIONS) {
     breakdown[dim] = sumBy(bd.filter((r) => r.dimension === dim && inMonth(r, month)), "value");
-    prevBreakdown[dim] = sumBy(bd.filter((r) => r.dimension === dim && inMonth(r, addMonths(month, -1))), "value");
+    prevBreakdown[dim] = sumBy(bd.filter((r) => r.dimension === dim && inMonth(r, prevMonth) && sameDays(r)), "value");
   }
-  return { month, sample: false, daily, monthly, breakdown, prevBreakdown };
+  // Everything since tracking began, up to the report's last day (the report opens with it).
+  const allDays = await sbGet("web_daily", `select=date,pageviews,visitors&date=lte.${iso(last)}&order=date.asc`);
+  const allBd = await sbGet(
+    "web_daily_breakdown",
+    `select=dimension,value,pageviews,visitors&dimension=in.(country,device)&date=lte.${iso(last)}`,
+  );
+  const allByDate = new Map(allDays.map((d) => [String(d.date).slice(0, 10), d]));
+  const allDaily = [];
+  if (allDays.length) {
+    for (let d = new Date(`${String(allDays[0].date).slice(0, 10)}T00:00:00Z`); d <= last; d.setUTCDate(d.getUTCDate() + 1)) {
+      const r = allByDate.get(iso(d));
+      allDaily.push({ date: iso(d), pageviews: Number(r?.pageviews) || 0, visitors: Number(r?.visitors) || 0 });
+    }
+  }
+  const allTime = {
+    daily: allDaily,
+    breakdown: {
+      country: sumBy(allBd.filter((r) => r.dimension === "country"), "value"),
+      device: sumBy(allBd.filter((r) => r.dimension === "device"), "value"),
+    },
+  };
+  return { month, sample: false, daily, monthly, breakdown, prevBreakdown, prevToDate, allTime };
 }
 
 /* -------------------------------------------------------------------- Sample */
@@ -196,5 +228,6 @@ export function loadSample(month) {
       prevRatio * 0.8,
     ),
   };
-  return { month, sample: true, daily, monthly, breakdown, prevBreakdown };
+  const allTime = { daily, breakdown: { country: breakdown.country, device: breakdown.device } };
+  return { month, sample: true, daily, monthly, breakdown, prevBreakdown, allTime };
 }

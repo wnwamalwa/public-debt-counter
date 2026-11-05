@@ -1,13 +1,17 @@
-// Builds the monthly readership report for the Kenya National Debt Counter as
+// Builds the monthly visitor report for the Kenya National Debt Counter as
 // an A4 PDF: an at-a-glance infographic, world and Africa maps, monthly and
-// daily trends, what people read and how they arrived, and notes.
+// daily trends, what people opened and how they arrived, and notes.
 //
 //   node build-report.mjs --sample [--month 2026-10] [--out file.pdf]
 //   node build-report.mjs [--month 2026-10] [--out file.pdf] [--upload]
 //
 // Without --sample it reads Supabase (SUPABASE_URL, SUPABASE_SERVICE_ROLE).
-// --month defaults to last month. --upload puts the PDF in the public
-// Supabase Storage bucket "reports" as readers/<month>.pdf and readers/latest.pdf.
+// --month defaults to this month, to date: the report then covers day 1 to
+// today (today part-day) and compares with the same days of last month. The
+// workflow rebuilds it three times a day, and finalises last month's report
+// on the 1st and 2nd. --upload puts the PDF in the public Supabase Storage
+// bucket "reports" as readers/<month>.pdf and readers/latest.pdf (the storage
+// path keeps its old name so existing links still work).
 // Chromium: CHROME_PATH, else the system Chrome (GitHub runners have one).
 
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
@@ -27,10 +31,14 @@ const opt = (name, dflt) => {
   return i >= 0 && args[i + 1] && !args[i + 1].startsWith("--") ? args[i + 1] : dflt;
 };
 const flag = (name) => args.includes(`--${name}`);
-const lastMonth = addMonths(new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Nairobi" }).format(new Date()).slice(0, 7), -1);
-const MONTH = opt("month", lastMonth);
+const TODAY = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Nairobi" }).format(new Date());
+const THIS_MONTH = TODAY.slice(0, 7);
+const MONTH = opt("month", THIS_MONTH);
 const SAMPLE = flag("sample");
-const OUT = opt("out", `readers-report-${MONTH}.pdf`);
+// This month's report covers day 1 to today and is rebuilt during the day.
+const TO_DATE = !SAMPLE && MONTH === THIS_MONTH;
+const DAY = Number(TODAY.slice(8, 10));
+const OUT = opt("out", `visitors-report-${MONTH}.pdf`);
 
 /* ------------------------------------------------------------------- tokens */
 // Sequential ramp (validated: one hue, monotone, visible steps, light end >= 2:1).
@@ -128,7 +136,7 @@ function mapLegend(edges) {
   const ranges = [`1–${fmt(edges[0] - 1)}`];
   for (let i = 0; i < edges.length - 1; i++) ranges.push(`${fmt(edges[i])}–${fmt(edges[i + 1] - 1)}`);
   ranges.push(`${fmt(edges[edges.length - 1])}+`);
-  return `<div class="legend"><span class="legend-unit">Readers:</span>
+  return `<div class="legend"><span class="legend-unit">Visitors:</span>
     <span class="sw" style="background:${NO_DATA}"></span><span>none</span>
     ${ranges.map((r, i) => `<span class="sw" style="background:${RAMP[i]}"></span><span>${r}</span>`).join("")}
 </div>`;
@@ -173,12 +181,12 @@ function calendar(daily) {
     while (b < edges.length && d.visitors > edges[b]) b++;
     const dark = b >= 2;
     const peak = d.visitors === max;
-    cells.push(`<div class="cal-cell${peak ? " peak" : ""}" style="background:${RAMP[b]};color:${dark ? "#fff" : "#0b0b0b"}" title="${esc(dayLabel(d.date))}: ${fmt(d.visitors)} readers">
+    cells.push(`<div class="cal-cell${peak ? " peak" : ""}" style="background:${RAMP[b]};color:${dark ? "#fff" : "#0b0b0b"}" title="${esc(dayLabel(d.date))}: ${fmt(d.visitors)} visitors">
       <span class="cal-day">${Number(d.date.slice(8))}</span><span class="cal-n">${fmt(d.visitors)}</span></div>`);
   }
   const head = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((x) => `<div class="cal-head">${x}</div>`).join("");
   const legend = `<div class="legend small">
-    <span>fewer</span>${RAMP.map((c) => `<span class="sw" style="background:${c}"></span>`).join("")}<span>more readers per day</span></div>`;
+    <span>fewer</span>${RAMP.map((c) => `<span class="sw" style="background:${c}"></span>`).join("")}<span>more visitors per day</span></div>`;
   return `<div class="cal">${head}${cells.join("")}</div>${legend}`;
 }
 
@@ -199,7 +207,7 @@ function weekdayBars(daily) {
       .map(
         (a, i) => `<div class="bar-row"><span class="bar-label">${names[i]}</span>
           <span class="bar-track"><span class="bar-fill" style="width:${(a / max) * 100}%;background:${a === max ? BAR : BAR_MUTED}"></span></span>
-          <span class="bar-val">${fmt(a)}</span></div>`,
+          <span class="bar-val">${counts[i] ? fmt(a) : "–"}</span></div>`,
       )
       .join("")}</div>`,
   };
@@ -241,11 +249,13 @@ function stacked(rows, total) {
 
 function monthTable(rows) {
   const shown = rows.filter((m) => m.hasData !== false);
-  return `<table class="mt"><thead><tr><th>Month</th><th>Readers</th><th>Change</th><th>Page views</th><th>Pages per reader</th><th>In Kenya</th></tr></thead><tbody>
+  return `<table class="mt"><thead><tr><th>Month</th><th>Visitors</th><th>Change</th><th>Page views</th><th>Pages per visitor</th><th>In Kenya</th></tr></thead><tbody>
     ${shown
       .map((m, i) => {
-        const c = i ? change(m.visitors, shown[i - 1].visitors) : null;
-        return `<tr class="${m.month === MONTH ? "cur" : ""}"><td>${monthName(m.month)}</td><td>${fmt(m.visitors)}</td>
+        // This month to date is compared with the same days of last month.
+        const partial = TO_DATE && m.month === MONTH;
+        const c = partial ? growth : i ? change(m.visitors, shown[i - 1].visitors) : null;
+        return `<tr class="${m.month === MONTH ? "cur" : ""}"><td>${monthName(m.month)}${partial ? ` (to ${DAY} ${MNAME})` : ""}</td><td>${fmt(m.visitors)}</td>
           <td class="${i ? changeClass(c) : "flat"}">${i ? changeText(c) : "–"}</td><td>${fmt(m.pageviews)}</td>
           <td>${m.visitors ? (m.pageviews / m.visitors).toFixed(1) : "–"}</td><td>${m.visitors ? pct((m.kenya || 0) / m.visitors, 0) : "–"}</td></tr>`;
       })
@@ -265,22 +275,26 @@ const pageName = (p) =>
 const refName = (r) => (r === "(direct)" || r === "" || r == null ? "Direct / apps / bookmarks" : r);
 
 /* ------------------------------------------------------------------- report */
-const data = SAMPLE ? loadSample(MONTH) : await loadSupabase(MONTH);
+const data = SAMPLE ? loadSample(MONTH) : await loadSupabase(MONTH, TO_DATE ? DAY : null);
 const { daily, monthly, breakdown, prevBreakdown } = data;
 const cur = monthly[monthly.length - 1];
 const prev = monthly[monthly.length - 2];
-const readers = daily.reduce((s, d) => s + d.visitors, 0);
+const visitors = daily.reduce((s, d) => s + d.visitors, 0);
 const views = daily.reduce((s, d) => s + d.pageviews, 0);
-const prevReaders = prev?.visitors || 0;
-if (!readers) {
-  console.error(`No readership data for ${MONTH} in Supabase (web_daily). Run the daily copy first (collect.mjs).`);
+const prevVisitors = TO_DATE ? data.prevToDate || 0 : prev?.visitors || 0;
+if (!visitors && TO_DATE) {
+  console.log(`No visitor data for ${MONTH} yet; nothing to build.`);
+  process.exit(0);
+}
+if (!visitors) {
+  console.error(`No visitor data for ${MONTH} in Supabase (web_daily). Run the daily copy first (collect.mjs).`);
   process.exit(1);
 }
 const countryRows = breakdown.country.filter((r) => r.value && r.value !== "Others");
 const countryMap = new Map(countryRows.map((r) => [r.value, r.visitors]));
 const nCountries = countryRows.length;
 const kenya = countryMap.get("KE") || 0;
-const outside = readers - kenya;
+const outside = visitors - kenya;
 const africaOther = countryRows.filter((r) => AFRICA.has(r.value) && r.value !== "KE").reduce((s, r) => s + r.visitors, 0);
 const peak = daily.reduce((a, b) => (b.visitors > a.visitors ? b : a), daily[0]);
 const wk = weekdayBars(daily);
@@ -295,17 +309,47 @@ const refTotal = breakdown.referrer.reduce((s, r) => s + r.visitors, 0) || 1;
 const search = breakdown.referrer.filter((r) => /google|bing|duckduckgo|yahoo/.test(r.value)).reduce((s, r) => s + r.visitors, 0);
 const social = breakdown.referrer.filter((r) => /x\.com|twitter|facebook|linkedin|whatsapp|instagram|tiktok|t\.co/.test(r.value)).reduce((s, r) => s + r.visitors, 0);
 const news = breakdown.referrer.filter((r) => /nation\.africa|the-star|citizen|standardmedia|kenyans\.co\.ke|businessdailyafrica|capitalfm/.test(r.value)).reduce((s, r) => s + r.visitors, 0);
-const growth = change(readers, prevReaders);
+const growth = change(visitors, prevVisitors);
 const yearRows = monthly.filter((m) => m.hasData !== false);
 const best = yearRows.reduce((a, b) => (b.visitors > a.visitors ? b : a), yearRows[0] || cur);
-const ytdReaders = yearRows.reduce((s, m) => s + m.visitors, 0);
+const ytdVisitors = yearRows.reduce((s, m) => s + m.visitors, 0);
+
+// Since tracking began (the opening page).
+const all = data.allTime;
+const allVisitors = all.daily.reduce((s, d) => s + d.visitors, 0);
+const allViews = all.daily.reduce((s, d) => s + d.pageviews, 0);
+const allCountryRows = all.breakdown.country.filter((r) => r.value && r.value !== "Others");
+const allCountryMap = new Map(allCountryRows.map((r) => [r.value, r.visitors]));
+const allKenya = allCountryMap.get("KE") || 0;
+const allAfricaOther = allCountryRows.filter((r) => AFRICA.has(r.value) && r.value !== "KE").reduce((s, r) => s + r.visitors, 0);
+const allDeviceTotal = all.breakdown.device.reduce((s, r) => s + r.visitors, 0) || 1;
+const allMobile = all.breakdown.device.find((r) => r.value === "mobile")?.visitors || 0;
+const allDesktop = all.breakdown.device.find((r) => r.value === "desktop")?.visitors || 0;
+const allPeak = all.daily.reduce((a, b) => (b.visitors > a.visitors ? b : a), all.daily[0]);
+const fullDate = (iso) => new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+const START = all.daily[0]?.date || `${MONTH}-01`;
+const END = all.daily[all.daily.length - 1]?.date || START;
+const nDays = all.daily.length;
+// Visitors in each month of the period (the first and current ones may be part-months).
+const byMonth = [...new Set(all.daily.map((d) => d.date.slice(0, 7)))].map((mo) => {
+  const rows = all.daily.filter((d) => d.date.startsWith(mo));
+  const a = Number(rows[0].date.slice(8)), b = Number(rows[rows.length - 1].date.slice(8));
+  const nm = monthName(mo).split(" ")[0];
+  return { label: `${nm} ${a}–${b}`, visitors: rows.reduce((s, d) => s + d.visitors, 0) };
+});
 
 const worldEdges = niceEdges(Math.max(...countryRows.filter((r) => r.value !== "KE").map((r) => r.visitors), 10));
 const worldMap = mapSvg(WORLD, countryMap, worldEdges, {
   width: 720,
   height: 360,
   projection: geoNaturalEarth1(),
-  label: [{ code: "KE", text: `Kenya ${pct(kenya / readers, 0)}`, dx: 40, dy: 36 }],
+  label: [{ code: "KE", text: `Kenya ${pct(kenya / visitors, 0)}`, dx: 40, dy: 36 }],
+});
+const allWorldMap = mapSvg(WORLD, allCountryMap, worldEdges, {
+  width: 720,
+  height: 360,
+  projection: geoNaturalEarth1(),
+  label: [{ code: "KE", text: `Kenya ${pct(allKenya / (allVisitors || 1), 0)}`, dx: 40, dy: 36 }],
 });
 const afrRows = countryRows.filter((r) => AFRICA.has(r.value));
 const africaMap = mapSvg(AFR, countryMap, worldEdges, {
@@ -326,15 +370,22 @@ const fontCss = ["inter-latin-400", "inter-latin-500", "inter-latin-600", "inter
   })
   .join("\n");
 
-const M = monthName(MONTH);
-const pageHead = (n, title) => `<header class="ph"><span class="ph-brand">Kenya National Debt Counter · Readership report · ${M}</span><span class="ph-n">${n}</span></header>
+const MNAME = monthName(MONTH).split(" ")[0];
+const SPAN = DAY === 1 ? `1 ${MNAME}` : `1–${DAY} ${MNAME}`;
+const M = TO_DATE ? `${monthName(MONTH)} to date (${SPAN})` : monthName(MONTH);
+const IN_MONTH = TO_DATE ? `${MNAME} so far` : MNAME;
+const PREV_NAME = monthName(addMonths(MONTH, -1)).split(" ")[0];
+// Month to date is compared with the same days of last month, not all of it.
+const PREV_LABEL = TO_DATE ? `the same days of ${PREV_NAME}` : PREV_NAME;
+const GENERATED = new Date().toLocaleString("en-GB", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Africa/Nairobi" });
+const pageHead = (n, title) => `<header class="ph"><span class="ph-brand">Kenya National Debt Counter · Visitor report · ${M}</span><span class="ph-n">${n}</span></header>
   <h2 class="pt">${title}</h2>`;
 const sampleMark = data.sample ? `<div class="watermark">SAMPLE · ILLUSTRATIVE FIGURES</div>` : "";
 const sampleNote = data.sample
   ? `<div class="sample-note"><b>Sample layout.</b> The figures in this report are made up to show the design. The real report uses the site's Vercel Web Analytics data.</div>`
   : "";
 
-const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Readership report ${M}</title><style>
+const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Visitor report ${M}</title><style>
 ${fontCss}
 @page { size: A4; margin: 0 }
 * { box-sizing: border-box }
@@ -412,51 +463,75 @@ h3 { font-size: 10.5pt; margin: 0 0 2mm; font-weight: 700 }
 .mt tr.cur td { font-weight: 700; background: #f2f8f4 }
 </style></head><body>
 
-<!-- 1. At a glance ------------------------------------------------------- -->
+<!-- 1. Since tracking began ---------------------------------------------- -->
 <section class="page">${sampleMark}
   <div class="cover-band">
-    <div class="kicker">Readership report · ${M}</div>
-    <h1>Who read the Kenya<br>National Debt Counter</h1>
-    <p>Monthly figures on readers, where they are, what they read and how they found the site. Institute of Economic Affairs (IEA Kenya).</p>
+    <div class="kicker">Visitor report · ${fullDate(START)} to ${fullDate(END)}</div>
+    <h1>Who visited the Kenya<br>National Debt Counter</h1>
+    <p>All visitors since tracking began on ${fullDate(START)}, then ${TO_DATE ? `${MNAME} so far` : MNAME} in detail: where visitors are, what they opened and how they found the site. Institute of Economic Affairs (IEA Kenya).</p>
   </div>
   ${sampleNote}
-  <div class="headline"><span class="big">${fmt(readers)}</span><span class="what">people read the counter in ${monthName(MONTH, "long").split(" ")[0]}</span>
-    <span class="chg ${changeClass(growth)}">${growth === null ? "" : `${changeText(growth)} on ${monthName(addMonths(MONTH, -1)).split(" ")[0]}`}</span></div>
+  <div class="headline"><span class="big">${fmt(allVisitors)}</span><span class="what">visitors since ${fullDate(START)}</span>
+    <span class="chg flat">over ${nDays} days, about ${fmt(allVisitors / Math.max(1, nDays))} a day</span></div>
   <div class="kpis">
-    <div class="kpi"><div class="kpi-n">${fmt(views)}</div><div class="kpi-l">page views</div><div class="kpi-s">${(views / readers).toFixed(1)} pages per reader</div></div>
-    <div class="kpi"><div class="kpi-n">${nCountries}</div><div class="kpi-l">countries reached</div><div class="kpi-s">${fmt(outside)} readers outside Kenya</div></div>
-    <div class="kpi"><div class="kpi-n">${pct(kenya / readers, 0)}</div><div class="kpi-l">of readers in Kenya</div><div class="kpi-s">${fmt(africaOther)} elsewhere in Africa</div></div>
-    <div class="kpi"><div class="kpi-n">${pct(mobile / deviceTotal, 0)}</div><div class="kpi-l">read on a phone</div><div class="kpi-s">${hasUtm ? `${fmt(embed)} arrived via the embedded counter` : `${pct(desktop / deviceTotal, 0)} on a computer`}</div></div>
+    <div class="kpi"><div class="kpi-n">${fmt(allViews)}</div><div class="kpi-l">page views</div><div class="kpi-s">${allVisitors ? (allViews / allVisitors).toFixed(1) : "–"} pages per visitor</div></div>
+    <div class="kpi"><div class="kpi-n">${allCountryRows.length}</div><div class="kpi-l">countries reached</div><div class="kpi-s">${fmt(allVisitors - allKenya)} visitors outside Kenya</div></div>
+    <div class="kpi"><div class="kpi-n">${pct(allKenya / (allVisitors || 1), 0)}</div><div class="kpi-l">of visitors in Kenya</div><div class="kpi-s">${fmt(allAfricaOther)} elsewhere in Africa</div></div>
+    <div class="kpi"><div class="kpi-n">${pct(allMobile / allDeviceTotal, 0)}</div><div class="kpi-l">visited on a phone</div><div class="kpi-s">${pct(allDesktop / allDeviceTotal, 0)} on a computer</div></div>
   </div>
-  <h3>Readers by country</h3>
-  <div class="sub">Each country shaded by its readers in ${M}. Kenya is outlined.</div>
+  <h3>Visitors by country</h3>
+  <div class="sub">Since ${fullDate(START)}. Kenya is outlined.</div>
+  ${allWorldMap}
+  ${mapLegend(worldEdges)}
+  <div class="grid2" style="margin-top:4mm">
+    <div><h3>Top five countries</h3>${barList(allCountryRows, { total: allVisitors, label: (r) => countryName(r.value), n: 5 })}</div>
+    <div><h3>In brief</h3><ul class="insights">
+      ${byMonth.map((b) => `<li>${b.label}: <b>${fmt(b.visitors)}</b> visitors.</li>`).join("")}
+      ${allPeak ? `<li>Busiest day so far: <b>${dayLabel(allPeak.date)}</b>, with ${fmt(allPeak.visitors)} visitors.</li>` : ""}
+    </ul></div>
+  </div>
+  <div class="foot"><span>kenyadebtcounter.vercel.app</span><span>Source: Vercel Web Analytics. Visitors are counted once a day per device, so totals are visits, not unique people.</span></div>
+</section>
+
+<!-- 2. This month ------------------------------------------------------- -->
+<section class="page">${sampleMark}
+  ${pageHead(2, TO_DATE ? `${MNAME} so far` : `${MNAME} in detail`)}
+  <div class="headline"><span class="big">${fmt(visitors)}</span><span class="what">people visited the counter in ${IN_MONTH}</span>
+    <span class="chg ${changeClass(growth)}">${growth === null ? "" : `${changeText(growth)} on ${PREV_LABEL}`}</span></div>
+  <div class="kpis">
+    <div class="kpi"><div class="kpi-n">${fmt(views)}</div><div class="kpi-l">page views</div><div class="kpi-s">${(views / visitors).toFixed(1)} pages per visitor</div></div>
+    <div class="kpi"><div class="kpi-n">${nCountries}</div><div class="kpi-l">countries reached</div><div class="kpi-s">${fmt(outside)} visitors outside Kenya</div></div>
+    <div class="kpi"><div class="kpi-n">${pct(kenya / visitors, 0)}</div><div class="kpi-l">of visitors in Kenya</div><div class="kpi-s">${fmt(africaOther)} elsewhere in Africa</div></div>
+    <div class="kpi"><div class="kpi-n">${pct(mobile / deviceTotal, 0)}</div><div class="kpi-l">visited on a phone</div><div class="kpi-s">${hasUtm ? `${fmt(embed)} arrived via the embedded counter` : `${pct(desktop / deviceTotal, 0)} on a computer`}</div></div>
+  </div>
+  <h3>Visitors by country</h3>
+  <div class="sub">Each country shaded by its visitors in ${M}. Kenya is outlined.</div>
   ${worldMap}
   ${mapLegend(worldEdges)}
   <div class="grid2" style="margin-top:4mm">
-    <div><h3>Top five countries</h3>${barList(countryRows, { total: readers, label: (r) => countryName(r.value), n: 5 })}</div>
+    <div><h3>Top five countries</h3>${barList(countryRows, { total: visitors, label: (r) => countryName(r.value), n: 5 })}</div>
     <div><h3>In brief</h3><ul class="insights">
-      <li>Busiest day: <b>${dayLabel(peak.date)}</b>, with ${fmt(peak.visitors)} readers.</li>
+      <li>Busiest day: <b>${dayLabel(peak.date)}</b>, with ${fmt(peak.visitors)} visitors.</li>
       <li>${wk.best}s are the busiest day of the week on average.</li>
       <li>${pct(search / refTotal, 0)} came from search engines, ${pct(social / refTotal, 0)} from social media and ${pct(news / refTotal, 0)} from news sites.</li>
-      <li>${fmt(ytdReaders)} readers since ${monthName(yearRows[0]?.month || MONTH)}; the best month was ${monthName(best.month)}.</li>
     </ul></div>
   </div>
-  <div class="foot"><span>kenyadebtcounter.vercel.app</span><span>Source: Vercel Web Analytics. Readers are counted once a day per device.</span></div>
+  <div class="foot"><span>kenyadebtcounter.vercel.app</span><span>2</span></div>
 </section>
 
-<!-- 2. Where readers are -------------------------------------------------- -->
+<!-- 2. Where visitors are -------------------------------------------------- -->
 <section class="page">${sampleMark}
-  ${pageHead(2, "Where readers are")}
-  <p class="lede">${pct(kenya / readers, 0)} of readers were in Kenya. Outside Kenya, the largest audiences were in ${countryRows
+  ${pageHead(3, "Where visitors are")}
+  <p class="lede">${pct(kenya / visitors, 0)} of visitors were in Kenya. Outside Kenya, the largest audiences were in ${countryRows
     .filter((r) => r.value !== "KE")
     .slice(0, 3)
     .map((r) => countryName(r.value))
     .join(", ")
-    .replace(/, ([^,]*)$/, " and $1")}. Readers came from ${afrRows.length} African countries.</p>
+    .replace(/, ([^,]*)$/, " and $1")}. Visitors came from ${afrRows.length} African countries.</p>
   <div class="grid-map">
     <div><h3>Africa</h3><div class="sub">Same shading as the world map; the largest African audiences are labelled.</div>${africaMap}${mapLegend(worldEdges)}</div>
-    <div><h3>Top 20 countries</h3><div class="sub">Readers, share of all readers, and change on ${monthName(addMonths(MONTH, -1)).split(" ")[0]}.</div>
-      ${barList(countryRows, { total: readers, label: (r) => countryName(r.value), prev: prevBreakdown.country, n: 20 })}</div>
+    <div><h3>Top 20 countries</h3><div class="sub">Visitors, share of all visitors, and change on ${PREV_LABEL}.</div>
+      ${barList(countryRows, { total: visitors, label: (r) => countryName(r.value), prev: prevBreakdown.country, n: 20 })}</div>
   </div>
   <div class="split" style="margin-top:6mm">
     <div class="kpi"><div class="kpi-n">${fmt(kenya)}</div><div class="kpi-l">Kenya</div></div>
@@ -464,23 +539,23 @@ h3 { font-size: 10.5pt; margin: 0 0 2mm; font-weight: 700 }
     <div class="kpi"><div class="kpi-n">${fmt(outside - africaOther)}</div><div class="kpi-l">Rest of the world</div></div>
     <div class="kpi"><div class="kpi-n">${nCountries}</div><div class="kpi-l">Countries in total</div></div>
   </div>
-  <div class="foot"><span>Country comes from the reader's internet connection, so VPN users appear where their VPN is.</span><span>2</span></div>
+  <div class="foot"><span>Country comes from the visitor's internet connection, so VPN users appear where their VPN is.</span><span>3</span></div>
 </section>
 
 <!-- 3. Trends ----------------------------------------------------------- -->
 <section class="page">${sampleMark}
-  ${pageHead(3, "Monthly and daily trends")}
-  <p class="lede">${growth === null ? "" : `Readers ${growth >= 0 ? "rose" : "fell"} ${Math.abs(growth * 100).toFixed(0)}% on ${monthName(addMonths(MONTH, -1)).split(" ")[0]}. `}Spikes usually follow new CBK debt figures, the budget, and media coverage of the counter.</p>
+  ${pageHead(4, "Monthly and daily trends")}
+  <p class="lede">${growth === null ? "" : `Visitors ${growth >= 0 ? "rose" : "fell"} ${Math.abs(growth * 100).toFixed(0)}% on ${PREV_LABEL}. `}Spikes usually follow new CBK debt figures, the budget, and media coverage of the counter.</p>
   <div class="grid2">
-    <div class="card"><h3>Readers per month</h3><div class="sub">Last 12 months. – means the site was not yet tracked.</div>
+    <div class="card"><h3>Visitors per month</h3><div class="sub">Last 12 months${TO_DATE ? `; ${MNAME} is to date` : ""}. – means the site was not yet tracked.</div>
       ${columnChart(monthly, { key: "visitors", width: 340, height: 140, highlight: MONTH })}</div>
     <div class="card"><h3>Page views per month</h3><div class="sub">Shown separately, as it is a different measure.</div>
       ${columnChart(monthly, { key: "pageviews", width: 340, height: 140, highlight: MONTH })}</div>
   </div>
   <div class="grid-map" style="margin-top:4mm;grid-template-columns:1.55fr 1fr">
-    <div class="card"><h3>Readers each day, ${M}</h3><div class="sub">Darker means more readers; the busiest day is outlined.</div>${calendar(daily)}</div>
-    <div class="card"><h3>Average readers by weekday</h3><div class="sub">${M}</div>${wk.html}
-      <div style="margin-top:3mm"><h3>Pages per reader</h3><div class="sub">How deeply people read, last 6 months</div>
+    <div class="card"><h3>Visitors each day, ${M}</h3><div class="sub">Darker means more visitors; the busiest day is outlined.</div>${calendar(daily)}</div>
+    <div class="card"><h3>Average visitors by weekday</h3><div class="sub">${M}</div>${wk.html}
+      <div style="margin-top:3mm"><h3>Pages per visitor</h3><div class="sub">How deeply people browse, last 6 months</div>
       ${columnChart(
         monthly.slice(-6).map((m) => ({ ...m, ratio: m.visitors ? m.pageviews / m.visitors : 0 })),
         { key: "ratio", width: 240, height: 95, highlight: MONTH, fmtV: (v) => (v ? v.toFixed(1) : "–") },
@@ -488,22 +563,22 @@ h3 { font-size: 10.5pt; margin: 0 0 2mm; font-weight: 700 }
   </div>
   <div class="card" style="margin-top:4mm"><h3>Month by month</h3><div class="sub">The figures behind the charts above.</div>
     ${monthTable(monthly)}</div>
-  <div class="foot"><span>Monthly totals add up the daily figures.</span><span>3</span></div>
+  <div class="foot"><span>Monthly totals add up the daily figures.</span><span>4</span></div>
 </section>
 
-<!-- 4. What they read --------------------------------------------------- -->
+<!-- 4. What they opened --------------------------------------------------- -->
 <section class="page">${sampleMark}
-  ${pageHead(4, "What people read and how they found it")}
+  ${pageHead(5, "What people opened and how they found it")}
   <p class="lede">The live counter on the home page is the main draw; ${pct(
-    (breakdown.page.find((r) => r.value === "/explore")?.visitors || 0) / readers,
+    (breakdown.page.find((r) => r.value === "/explore")?.visitors || 0) / visitors,
     0,
-  )} of readers also opened the charts on Explore.</p>
-  <div class="card wide"><h3>Most-read pages</h3><div class="sub">Readers per page, share of readers, and change on ${monthName(addMonths(MONTH, -1)).split(" ")[0]}.</div>
-    ${barList(breakdown.page, { total: readers, label: (r) => pageName(r.value), prev: prevBreakdown.page, n: 12 })}</div>
+  )} of visitors also opened the charts on Explore.</p>
+  <div class="card wide"><h3>Most-visited pages</h3><div class="sub">Visitors per page, share of visitors, and change on ${PREV_LABEL}.</div>
+    ${barList(breakdown.page, { total: visitors, label: (r) => pageName(r.value), prev: prevBreakdown.page, n: 12 })}</div>
   <div class="grid2" style="margin-top:4mm">
-    <div class="card"><h3>Where readers came from</h3><div class="sub">Website or app that sent them</div>
+    <div class="card"><h3>Where visitors came from</h3><div class="sub">Website or app that sent them</div>
       ${barList(breakdown.referrer, { total: refTotal, label: (r) => refName(r.value), n: 12 })}</div>
-    <div class="card"><h3>Device</h3><div class="sub">Share of readers</div>${stacked(breakdown.device, deviceTotal)}
+    <div class="card"><h3>Device</h3><div class="sub">Share of visitors</div>${stacked(breakdown.device, deviceTotal)}
       <div style="margin-top:6mm"><h3>Arrivals by channel</h3>
       <div class="split" style="grid-template-columns:1fr 1fr;gap:2.5mm">
         <div class="kpi"><div class="kpi-n">${pct(search / refTotal, 0)}</div><div class="kpi-l">Search</div></div>
@@ -514,24 +589,24 @@ h3 { font-size: 10.5pt; margin: 0 0 2mm; font-weight: 700 }
           : `<div class="kpi"><div class="kpi-n">${pct((breakdown.referrer.find((r) => r.value === "(direct)")?.visitors || 0) / refTotal, 0)}</div><div class="kpi-l">Direct / apps</div></div>`}
       </div></div></div>
   </div>
-  <div class="foot"><span>"Direct" covers typed addresses, bookmarks and apps (e.g. WhatsApp) that don't pass on where the link was.</span><span>4</span></div>
+  <div class="foot"><span>"Direct" covers typed addresses, bookmarks and apps (e.g. WhatsApp) that don't pass on where the link was.</span><span>5</span></div>
 </section>
 
 <!-- 5. Notes ------------------------------------------------------------ -->
 <section class="page">${sampleMark}
-  ${pageHead(5, "About these figures")}
+  ${pageHead(6, "About these figures")}
   <div class="notes">
     <h4>Source</h4><p>Vercel Web Analytics, which runs on every page of kenyadebtcounter.vercel.app except the embeddable counter (<i>/embed</i>), so that reading a news article that embeds the counter is not counted as a visit to the site. Figures are copied each day into IEA Kenya's database, where they are kept permanently.</p>
-    <h4>Readers</h4><p>A reader is a device that opened at least one page on a given day. Vercel identifies devices without cookies, from a fingerprint that changes every day, so the same person reading on two days counts twice. Monthly readers are the sum of daily readers. They are a fair measure of reach, not a count of unique people.</p>
-    <h4>Page views</h4><p>Every page opened, including several pages by the same reader. Pages per reader is page views ÷ readers.</p>
-    <h4>Country</h4><p>From the reader's internet connection. Readers using a VPN or some mobile networks can appear in another country. Country is not available below national level, so county figures cannot be shown.</p>
-    <h4>Where readers came from</h4><p>The site that linked to the counter, when the browser passes it on. Messaging apps and many mobile apps don't, so their readers appear as "Direct". Links in the embedded counter carry the tag <i>utm_source=embed</i>; counting those needs a paid Vercel plan, so the figure appears only when it is available.</p>
-    <h4>What is not counted</h4><p>Bots and crawlers, preview and test versions of the site, readers who block analytics scripts, and the embedded counter itself.</p>
+    <h4>Visitors</h4><p>A visitor is a device that opened at least one page on a given day. Vercel identifies devices without cookies, from a fingerprint that changes every day, so the same person visiting on two days counts twice. Monthly visitors are the sum of daily visitors. They are a fair measure of reach, not a count of unique people.</p>
+    <h4>Page views</h4><p>Every page opened, including several pages by the same visitor. Pages per visitor is page views ÷ visitors.</p>
+    <h4>Country</h4><p>From the visitor's internet connection. Visitors using a VPN or some mobile networks can appear in another country. Country is not available below national level, so county figures cannot be shown.</p>
+    <h4>Where visitors came from</h4><p>The site that linked to the counter, when the browser passes it on. Messaging apps and many mobile apps don't, so their visitors appear as "Direct". Links in the embedded counter carry the tag <i>utm_source=embed</i>; counting those needs a paid Vercel plan, so the figure appears only when it is available.</p>
+    <h4>What is not counted</h4><p>Bots and crawlers, preview and test versions of the site, visitors who block analytics scripts, and the embedded counter itself.</p>
     <h4>Privacy</h4><p>No cookies are set and no personal data is stored. Only totals are kept: per day, and per page, country, referring site, device and campaign tag.</p>
     <h4>Contact</h4><p>Institute of Economic Affairs (IEA Kenya), ACK Garden House, 5th Floor, 1st Ngong Avenue, P.O. Box 53989-00200, Nairobi. admin@ieakenya.or.ke</p>
   </div>
   ${sampleNote}
-  <div class="foot"><span>Report generated ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "Africa/Nairobi" })}</span><span>5</span></div>
+  <div class="foot"><span>Report generated ${GENERATED} EAT${TO_DATE ? ". Updated three times a day; today's figures cover part of the day" : ""}</span><span>6</span></div>
 </section>
 </body></html>`;
 
@@ -548,7 +623,7 @@ const page = await browser.newPage();
 await page.setContent(html, { waitUntil: "load" });
 await page.pdf({ path: OUT, format: "A4", printBackground: true, preferCSSPageSize: true });
 await browser.close();
-console.log(`Wrote ${OUT} (${data.sample ? "sample data" : "Supabase data"}, ${M}: ${fmt(readers)} readers, ${fmt(views)} page views)`);
+console.log(`Wrote ${OUT} (${data.sample ? "sample data" : "Supabase data"}, ${M}: ${fmt(visitors)} visitors, ${fmt(views)} page views)`);
 
 /* ------------------------------------------------------------------ upload */
 if (flag("upload")) {

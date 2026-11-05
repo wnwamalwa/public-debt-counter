@@ -7,13 +7,15 @@ name: Readership (Vercel Web Analytics)
 # whatever the Vercel plan's reporting window. Each run REPLACES the rows for
 # those days, so Supabase keeps one row per day however often this runs; the
 # 07:37 run settles yesterday's final figure.
-# On the 2nd of each month it also builds last month's PDF readership report
-# and puts it in Supabase Storage (reports/readers/<month>.pdf and latest.pdf),
-# which the site's /readers page links to.
+# Each run then rebuilds this month's PDF visitor report, to date (day 1 to
+# now, compared with the same days of last month), and puts it in Supabase
+# Storage (reports/readers/<month>.pdf and latest.pdf), which the site's
+# download buttons link to. On the 1st and 2nd it also rebuilds last month's
+# report with the month's final figures.
 #
 # By hand (Actions -> this workflow -> Run workflow):
 #   days     how many past days to (re)fetch; use 31 for the first run
-#   report   also build and upload the PDF report (for "month", default last month)
+#   report   also build and upload the PDF report (for "month", default this month to date)
 #
 # Needs repository secrets VERCEL_TOKEN (Vercel -> Account Settings -> Tokens),
 # SUPABASE_URL and SUPABASE_SERVICE_ROLE (already set for the CBK pipelines).
@@ -22,7 +24,6 @@ on:
     - cron: "37 4 * * *"
     - cron: "37 10 * * *"
     - cron: "37 16 * * *"
-    - cron: "52 4 2 * *"   # monthly report, after the daily copy has the last day of the month
   workflow_dispatch:
     inputs:
       days:
@@ -34,7 +35,7 @@ on:
         type: boolean
         default: false
       month:
-        description: "Report month as YYYY-MM (blank = last month)"
+        description: "Report month as YYYY-MM (blank = this month to date)"
         type: string
         default: ""
 
@@ -77,26 +78,35 @@ jobs:
         run: npm ci --no-audit --no-fund
 
       - name: Copy Vercel Web Analytics into Supabase
-        if: github.event.schedule != '52 4 2 * *'
         env:
           DAYS: ${{ inputs.days || 3 }}
         run: node collect.mjs
 
-      - name: Build and upload the monthly PDF report
-        if: github.event.schedule == '52 4 2 * *' || inputs.report
+      - name: Build and upload the PDF visitor report
+        if: github.event_name == 'schedule' || inputs.report
         env:
           CHROME_PATH: /usr/bin/google-chrome
         run: |
           month="${{ inputs.month }}"
-          node build-report.mjs ${month:+--month "$month"} --out report.pdf --upload
+          if [ -n "$month" ]; then
+            node build-report.mjs --month "$month" --out report.pdf --upload
+          else
+            # 1st and 2nd: finalise last month's report first (its last day is now settled).
+            if [ "$(date +%-d)" -le 2 ]; then
+              node build-report.mjs --month "$(date -d "$(date +%Y-%m-01) -1 day" +%Y-%m)" --out report-last-month.pdf --upload
+            fi
+            # This month to date; uploaded last, so it is latest.pdf (skipped if no data yet).
+            node build-report.mjs --out report.pdf --upload
+          fi
 
       - name: Keep the PDF with the run
-        if: github.event.schedule == '52 4 2 * *' || inputs.report
+        if: github.event_name == 'schedule' || inputs.report
         uses: actions/upload-artifact@v4
         with:
-          name: readership-report
-          path: web-analytics/report.pdf
-          retention-days: 90
+          name: visitor-report
+          path: web-analytics/report*.pdf
+          if-no-files-found: ignore
+          retention-days: 30
 
       - name: Open an issue if this run failed
         if: failure() && github.event_name == 'schedule'
