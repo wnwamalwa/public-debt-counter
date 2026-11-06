@@ -1,7 +1,7 @@
 name: CBK weekly bulletin (alert + counter update)
 
 # Two jobs:
-#   alert    every 3 hours: checks CBK for a new Weekly Bulletin PDF and for a
+#   alert    weekly (Saturday 09:41 Nairobi): checks CBK for a new Weekly Bulletin PDF and for a
 #            new Public Debt file, whichever comes first, and opens a GitHub
 #            issue (GitHub emails it to you) with the links and what to enter
 #            in the "debt_bulletin" tab of the IEA Kenya Google Sheet.
@@ -12,7 +12,7 @@ name: CBK weekly bulletin (alert + counter update)
 #            update the counter straight away.
 on:
   schedule:
-    - cron: "41 */3 * * *"        # alert
+    - cron: "41 6 * * 6"          # alert: weekly, Saturday 09:41 Nairobi (CBK posts the bulletin on Fridays)
     - cron: "53 5,10,15 * * *"    # counter (UTC = 08:53, 13:53, 18:53 Nairobi)
   workflow_dispatch:
     inputs:
@@ -36,7 +36,7 @@ env:
 
 jobs:
   alert:
-    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '41 */3 * * *'
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '41 6 * * 6'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
