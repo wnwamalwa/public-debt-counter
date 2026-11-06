@@ -79,11 +79,11 @@ BUDGET_FY         <- Sys.getenv("BUDGET_FY", "FY 2026/27")
 BUDGET_NET_DOM_BN <- as.numeric(Sys.getenv("BUDGET_NET_DOM_BN", "1030"))
 BUDGET_NET_EXT_BN <- as.numeric(Sys.getenv("BUDGET_NET_EXT_BN", "116.2"))
 # Currency composition of external debt (share of the US$ total). Source:
-# National Treasury, Public Debt Bulletin, December 2025, section 3.1
-# (USD 53.0%, EUR 27.3%, CNY 12.2%, JPY 4.9%, GBP 2.5%, others 0.2% counted
-# with USD). Update when the Treasury publishes a new composition, or set
-# CURRENCY_SHARES="USD=0.53,EUR=0.273,...".
-CURRENCY_SHARES <- c(USD = 0.532, EUR = 0.273, CNY = 0.122, JPY = 0.049, GBP = 0.025)
+# National Treasury, Annual Public Debt Report 2025/26, section 6.4, end June
+# 2026 (USD 54.9%, EUR 26.5%, CNY 11.5%, JPY 4.7%, GBP 2.3%, others 0.1%
+# counted with USD). Update when the Treasury publishes a new composition, or
+# set CURRENCY_SHARES="USD=0.55,EUR=0.265,...".
+CURRENCY_SHARES <- c(USD = 0.550, EUR = 0.265, CNY = 0.115, JPY = 0.047, GBP = 0.023)
 STATE_FILE <- Sys.getenv("STATE_FILE", "watch/debt_bulletin.applied")
 
 `%||%` <- function(a, b) if (is.null(a)) b else a
