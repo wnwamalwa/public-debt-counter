@@ -122,7 +122,8 @@ def lenders_notes(d: dict = LENDERS) -> list[str]:
         f"lenders in Kenya (domestic debt). Right (orange): lenders abroad (external debt). Both panels use the same "
         "scale, so bars can be compared across them.",
         f"The strip at the top splits the total of {_money(total)}: {v['dom_share']} owed at home ({v['dom_total']}) "
-        f"and {v['ext_share']} abroad ({v['ext_total']}).",
+        f"and {v['ext_share']} abroad ({v['ext_total']}). This is the Treasury's definition, which includes "
+        "government-guaranteed external debt; CBK's figure for the same date (KSh 13.01 tn) is lower, partly for that reason.",
         f"Domestic lenders mostly hold Treasury bills and bonds. Commercial banks are the largest single lender, with "
         f"{v['banks']} ({v['banks_share']} of domestic debt). Government bodies include parastatals and public pension "
         "funds; other investors include companies, investment banks and money market funds.",

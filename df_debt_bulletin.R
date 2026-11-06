@@ -31,6 +31,13 @@
 #   4. Adds a row to df_debt_current and df_debt_growth_per_sec (the two
 #      tables the website ticks the counter from), unless nothing changed
 #      since the last run.
+#   4b. Official monthly figures from the bulletin's "Public Debt" table
+#      (Table 10: domestic KSh bn, external US$ bn and KSh bn, total), entered
+#      in the "debt_bulletin_monthly" tab, REPLACE the CBK monthly-file figures
+#      for the same months in df_debt_historical (source "actual"), and add the
+#      months the file does not have yet. When a later bulletin revises a
+#      month, the newest bulletin_date wins. The growth trend, the estimated
+#      months and the charts then all start from these official figures.
 #   5. Rebuilds the months after CBK's latest monthly figure in
 #      df_debt_historical so the charts' history runs into today's figure
 #      instead of stepping up to it: each month-end (and today) is read off a
@@ -65,6 +72,7 @@ FORCE      <- tolower(Sys.getenv("FORCE", "false")) %in% c("true", "1", "yes")
 TZ         <- "Africa/Nairobi"
 SHEET_URL  <- "https://docs.google.com/spreadsheets/d/11Y_EoYqFJOTTubbBCQkh1gV3kbX1cVQHapdzbwWUXK4"
 SHEET_TAB  <- "debt_bulletin"
+MONTHLY_TAB <- "debt_bulletin_monthly"  # CBK Weekly Bulletin "Public Debt" table (monthly, official)
 STALE_DAYS <- 28          # newest domestic figure older than this: leave the counter to df_debt.R
 MAX_WEEKLY_CHANGE <- 0.05 # domestic may not move more than 5% from the previous row
 MAX_USD_CHANGE    <- 0.10 # external US$ may not move more than 10% from the previous row
@@ -307,6 +315,51 @@ hist <- if (nzchar(Sys.getenv("HISTORY_CSV"))) read.csv(Sys.getenv("HISTORY_CSV"
   sb_get("df_debt_historical", list(select = "date,debt_dom,debt_ext,source", source = "eq.actual",
                                     order = "date.asc", limit = 1000))
 hist <- hist %>% mutate(date = as_date(substr(date, 1, 10))) %>% arrange(date) %>% distinct(date, .keep_all = TRUE)
+
+# Official monthly figures from the bulletin's "Public Debt" table. They
+# override the CBK monthly file for the same months (revisions included).
+read_monthly <- function() {
+  if (nzchar(Sys.getenv("MONTHLY_CSV"))) return(read.csv(Sys.getenv("MONTHLY_CSV"), colClasses = "character"))
+  tryCatch(as.data.frame(read_sheet(SHEET_URL, sheet = MONTHLY_TAB, range = paste0(MONTHLY_TAB, "!A:G"), col_types = "c")),
+           error = function(e) { log_msg("No '", MONTHLY_TAB, "' tab read (", conditionMessage(e), "); using the CBK monthly file only."); NULL })
+}
+mraw <- read_monthly()
+monthly_sig <- "none"
+bulletin_months <- data.frame()
+if (!is.null(mraw) && nrow(mraw)) {
+  names(mraw) <- tolower(trimws(names(mraw)))
+  needm <- c("month", "domestic_bn", "external_bn", "bulletin_date")
+  if (length(setdiff(needm, names(mraw))))
+    fail("'", MONTHLY_TAB, "' is missing column(s): ", paste(setdiff(needm, names(mraw)), collapse = ", "))
+  m <- data.frame(
+    date          = floor_date(as_day(mraw$month), "month"),
+    debt_dom      = as_num(mraw$domestic_bn) * 1e9,
+    debt_ext      = as_num(mraw$external_bn) * 1e9,
+    total         = if ("total_bn" %in% names(mraw)) as_num(mraw$total_bn) * 1e9 else NA_real_,
+    bulletin_date = as_day(mraw$bulletin_date)
+  ) %>% filter(!is.na(date), !is.na(debt_dom), !is.na(debt_ext)) %>%
+    arrange(date, bulletin_date) %>% group_by(date) %>% slice_tail(n = 1) %>% ungroup() %>% as.data.frame()
+  bad <- m %>% filter(debt_dom < 1000e9 | debt_dom > 50000e9 | debt_ext < 500e9 | debt_ext > 30000e9 |
+                        (!is.na(total) & abs(debt_dom + debt_ext - total) > 1e9) | date > floor_date(today, "month"))
+  if (nrow(bad)) fail("'", MONTHLY_TAB, "' rows not used (", paste(format(bad$date, "%b %Y"), collapse = ", "),
+                      "): a value is implausible, in the future, or domestic + external does not equal total_bn.")
+  if (nrow(m)) {
+    old <- hist %>% select(date, debt_dom, debt_ext)
+    cmp <- m %>% left_join(old, by = "date", suffix = c("", "_file"))
+    cat("Official monthly figures from the bulletin (replace the CBK monthly file where they differ):\n")
+    for (i in seq_len(nrow(cmp))) {
+      f <- cmp$debt_dom_file[i] + cmp$debt_ext_file[i]
+      cat(sprintf("  %s  KSh %s bn (domestic %s, external %s)%s\n", format(cmp$date[i], "%b %Y"),
+                  bn(cmp$debt_dom[i] + cmp$debt_ext[i]), bn(cmp$debt_dom[i]), bn(cmp$debt_ext[i]),
+                  if (is.na(f)) "  [new month]" else if (abs(cmp$debt_dom[i] + cmp$debt_ext[i] - f) > 0.5e9)
+                    sprintf("  [file had %s bn]", bn(f)) else ""))
+    }
+    hist <- bind_rows(hist %>% filter(!date %in% m$date),
+                      m %>% transmute(date, debt_dom, debt_ext, source = "actual")) %>% arrange(date)
+    bulletin_months <- m
+    monthly_sig <- paste(format(m$date), round(m$debt_dom / 1e6), round(m$debt_ext / 1e6), collapse = ";")
+  }
+}
 recent <- tail(hist, TREND_MONTHS + 1)
 if (nrow(recent) < 7) fail("Too little CBK monthly history in df_debt_historical for growth rates.")
 span <- as.numeric(difftime(max(recent$date), min(recent$date), units = "secs"))
@@ -436,7 +489,8 @@ if (isTRUE(abs(debt_ttl / last_actual_ttl - 1) > 0.15))
 stamp <- sub("(\\d{2})(\\d{2})$", "\\1:\\2", format(now_time, "%Y-%m-%dT%H:%M:%S%z"))
 signature <- paste(latest$bulletin_date, latest$domestic, latest$domestic_as_at, latest$external_usd,
                    latest$external_month, fx$value, fx$date, round(xfx$factor, 4),
-                   if (CONSERVATIVE) paste0("cap", BUDGET_NET_DOM_BN, "/", BUDGET_NET_EXT_BN) else "nocap", sep = "|")
+                   if (CONSERVATIVE) paste0("cap", BUDGET_NET_DOM_BN, "/", BUDGET_NET_EXT_BN) else "nocap",
+                   monthly_sig, sep = "|")
 unchanged <- file.exists(STATE_FILE) && identical(readLines(STATE_FILE, warn = FALSE)[1], signature)
 
 cat("\n============ WEEKLY BULLETIN NOWCAST ============\n")
@@ -463,8 +517,10 @@ cat("=================================================\n")
 last_hist <- tail(hist, 1)
 t_actual  <- force_tz(as_datetime(last_hist$date %m+% months(1)), TZ)
 path_at <- function(times, t_pts, v_pts, gps) {
-  ok <- as.numeric(t_pts) >= as.numeric(t_actual)        # a bulletin older than the CBK month is ignored
-  t_pts <- as.numeric(t_pts[ok]); v_pts <- v_pts[ok]
+  # The official month-end figure comes first; a bulletin point at or before
+  # it is ignored (the official figure wins).
+  t_pts <- as.numeric(t_pts); keep <- c(TRUE, t_pts[-1] > t_pts[1])
+  t_pts <- t_pts[keep]; v_pts <- v_pts[keep]
   o <- order(t_pts); t_pts <- t_pts[o]; v_pts <- v_pts[o]
   x <- as.numeric(times); t_end <- max(t_pts); v_end <- v_pts[which.max(t_pts)]
   out <- if (length(t_pts) > 1) approx(t_pts, v_pts, xout = pmin(x, t_end), rule = 2)$y else rep(v_end, length(x))
@@ -475,7 +531,9 @@ path_at <- function(times, t_pts, v_pts, gps) {
 last_full  <- floor_date(as_date(now_time), "month") %m-% months(1)
 est_months <- if (last_full > last_hist$date) seq(last_hist$date %m+% months(1), last_full, by = "month") else as.Date(character(0))
 t_rows <- c(force_tz(as_datetime(est_months %m+% months(1)), TZ), now_time)
-est_dom <- path_at(t_rows, c(t_actual, dom_from), c(last_hist$debt_dom, latest$domestic), gps_dom)
+wk_pts <- b %>% filter(!is.na(domestic), !is.na(domestic_as_at)) %>% distinct(domestic_as_at, .keep_all = TRUE)
+est_dom <- path_at(t_rows, c(t_actual, force_tz(as_datetime(wk_pts$domestic_as_at + 1), TZ)),
+                   c(last_hist$debt_dom, wk_pts$domestic), gps_dom)
 est_ext <- path_at(t_rows, c(t_actual, ext_from), c(last_hist$debt_ext, ext_usd_now * fx$value), gps_ext)
 # Today's row is the counter's own figure, so the history ends exactly where the counter is.
 est_dom[length(est_dom)] <- debt_dom
@@ -495,6 +553,16 @@ if (!nzchar(supabase_url) || !nzchar(supabase_key)) fail("SUPABASE_URL and SUPAB
 
 sb_insert("df_debt_current", data.frame(date = stamp, debt_dom = debt_dom, debt_ext = debt_ext, debt_ttl = debt_ttl))
 sb_insert("df_debt_growth_per_sec", data.frame(date = stamp, gps_dom = gps_dom, gps_ext = gps_ext, gps_ttl = gps_ttl))
+# Official monthly figures from the bulletin replace whatever df_debt_historical
+# holds for those months (insert first, then remove the older rows for them).
+if (nrow(bulletin_months)) {
+  run_started <- format(now(tzone = "UTC"), "%Y-%m-%dT%H:%M:%OS3Z")
+  sb_insert("df_debt_historical", bulletin_months %>% transmute(date = format(date, "%Y-%m-%d"), debt_dom, debt_ext,
+                                                                debt_ttl = debt_dom + debt_ext, source = "actual"))
+  sb_delete("df_debt_historical", list(date = paste0("in.(", paste(format(bulletin_months$date, "%Y-%m-%d"), collapse = ","), ")"),
+                                       created_at = paste0("lt.", run_started)))
+  log_msg("df_debt_historical: ", nrow(bulletin_months), " months set to the bulletin's official figures.")
+}
 # Replace the estimated months: insert the new rows first, then remove every
 # older non-actual row after the last CBK month (ARIMA forecasts, earlier
 # estimates, "current" rows), so the table is never left without them.

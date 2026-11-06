@@ -30,7 +30,7 @@ Placeholders: `{debt_total}` (KSh 13.71 trillion), `{debt_total_full}`,
 `{debt_per_person}`, `{growth_per_second}`, `{growth_per_day}`, `{domestic}`,
 `{external}`, `{domestic_share}`, `{external_share}`, `{population}`,
 `{debt_to_gdp}`, `{date}`, `{time}`, `{since_increase}`, `{since_from}`,
-`{since_to}`, `{since_per_year}` (change since August 2022), and `{link}`
+`{since_to}`, `{since_per_year}`, `{since_times}` (change since the start of 2003), and `{link}`
 (the dashboard, tagged so visits from X can be counted).
 
 Example:
@@ -61,3 +61,34 @@ Repository secrets `X_API_KEY`, `X_API_SECRET`, `X_ACCESS_TOKEN`,
 developer account (permissions: Read and write). If a key leaks, regenerate it
 there and update the secret. `x-posts-test/` on the Mac is the old test copy
 for a personal account.
+
+
+## TikTok (Monday counter video)
+
+Rows with `tiktok` = `yes` also send a vertical (9:16) version of the counter
+video to the IEA Kenya TikTok account, after the X post. A TikTok problem never
+stops the X post; the result is written in the row's note. Only `counter`
+rows have a TikTok version. Weekly repeats keep the `tiktok` setting.
+
+**Mode** (repository variable `TIKTOK_MODE`):
+- `inbox` (default): the video arrives in the TikTok app as a draft
+  notification; open it, paste the caption from the row's note, and tap Post.
+  Needs only the `video.upload` scope and no TikTok audit.
+- `direct`: posts straight to the profile (`video.publish` scope). Until
+  TikTok has audited the app, such posts are private (only visible to the
+  account), and TikTok's sharing guidelines expect a person to confirm each
+  post, so audit approval for a scheduled poster is not guaranteed.
+
+**One-time setup**
+1. developers.tiktok.com: sign in with the IEA Kenya TikTok account, create an
+   app (Web), add **Login Kit** and **Content Posting API**, request the
+   scopes `user.info.basic` and `video.upload`, and add the redirect URI
+   `https://kenyadebtcounter.vercel.app/`. Submit the app for review.
+2. Supabase SQL editor (keeps TikTok's refresh token fresh):
+   `create table if not exists app_tokens (name text primary key, value text not null, updated_at timestamptz default now());`
+   `alter table app_tokens enable row level security;`
+3. On your computer: `python3 x-posts/tiktok_auth.py`, then save the printed
+   token as the secret `TIKTOK_REFRESH_TOKEN`, and the app's Client key and
+   secret as `TIKTOK_CLIENT_KEY` and `TIKTOK_CLIENT_SECRET`.
+4. Test: Actions -> X posts -> Run workflow with Dry run ticked; the run's
+   files include `rowN_tiktok.mp4`.

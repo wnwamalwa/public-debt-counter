@@ -40,10 +40,11 @@ Placeholders
   {debt_to_gdp}       63.4%   (public debt as a share of GDP, as on the dashboard)
   {date}              29 Oct 2026
   {time}              04:18 EAT  (when the post went out)
-  {since_increase}    KSh 4.91 tn   net rise in total debt since August 2022 (X_POSTS_BASELINE_MONTH)
-  {since_from}        KSh 8.66 tn   total debt in August 2022
-  {since_to}          KSh 13.57 tn  total debt now
-  {since_per_year}    KSh 1.18 tn      average rise per year since then
+  {since_increase}    KSh 13.09 tn  net rise in total debt since the start of 2003 (X_POSTS_BASELINE_MONTH,
+                                    end of Dec 2002); {since_times} = today / then, e.g. "22 times"
+  {since_from}        KSh 0.63 tn   total debt at the end of 2002
+  {since_to}          KSh 13.72 tn  total debt now
+  {since_per_year}    KSh 0.55 tn   average rise per year since then
   {projection_year_end}  KSh 13.91 trillion  total by 31 Dec at today's rate (as on the home page)
   {added_by_year_end}    KSh 197 billion    added between now and then
   {year_end}             31 Dec 2026        {days_to_year_end}  56
@@ -102,18 +103,20 @@ import cpi as cpi_mod  # noqa: E402
 import deflator as defl_mod  # noqa: E402
 import render_wed  # noqa: E402
 import render_fri  # noqa: E402
+import tiktok  # noqa: E402
+from render_tiktok import render_vertical  # noqa: E402
 
 EAT = timezone(timedelta(hours=3))
 SITE = "https://kenyadebtcounter.vercel.app"
 LINK_BASE = os.getenv("X_POSTS_LINK", f"{SITE}/?utm_source=x")
 # Debt "since the 2022 election" is measured from this month's figure in the history.
-BASELINE_MONTH = os.getenv("X_POSTS_BASELINE_MONTH", "2022-08")
+BASELINE_MONTH = os.getenv("X_POSTS_BASELINE_MONTH", "2002-12")  # end Dec 2002 = the start of 2003
 # Text of the automatic reply for "+chart" visuals, posted with the
 # animated debt-trend chart (render_chart.py) under the video.
 CARD_REPLY = os.getenv("X_POSTS_CARD_REPLY",
-                       "Since the August 2022 election, the net increase in overall public debt is "
-                       "{since_increase} ({since_to} − {since_from}), approximately {since_per_year} a year, "
-                       "without accounting for inflation.\n\nFor more insights, visit 👉 {link}")
+                       "Since 2003, Kenya's public debt has risen from {since_from} to {since_to}, about "
+                       "{since_times} its 2003 level: a net increase of {since_increase}, approximately "
+                       "{since_per_year} a year, without accounting for inflation.\n\nFor more insights, visit 👉 {link}")
 VISUALS = ("counter", "per_person", "chart", "terms", "terms_real", "service", "maturity", "lenders", "counter+chart", "per_person+chart",
            "counter+card", "per_person+card", "none", "")  # +card = +chart (older name)
 API_HISTORY = f"{SITE}/api/debt/historical"  # monthly total / domestic / external, newest first
@@ -124,7 +127,7 @@ API_RATIO = f"{SITE}/api/debt/ratio"  # last row = today's live debt-to-GDP
 X_API = os.getenv("X_API_BASE", "https://api.x.com")
 SHEET_TAB = "x_posts"
 HEADERS = ["post_at", "text", "visual", "status", "posted_at", "post_url", "note"]
-OPTIONAL = ["repeat"]  # added to the tab automatically if it is missing
+OPTIONAL = ["repeat", "tiktok"]  # added to the tab automatically if missing; tiktok = yes also sends the counter video to TikTok
 MAX_POSTS_PER_RUN = int(os.getenv("MAX_POSTS_PER_RUN", "2"))
 MISSED_AFTER_HOURS = float(os.getenv("MISSED_AFTER_HOURS", "6"))
 DRY_RUN = os.getenv("DRY_RUN", "false").lower() in ("true", "1", "yes")
@@ -201,9 +204,9 @@ def add_gdp(f: dict) -> None:
 
 
 def since_baseline(history: list[dict] | None, f: dict, now: datetime) -> dict:
-    """Net change in total debt since the BASELINE_MONTH figure (August 2022 by default,
-    the month of the 2022 general election), and the average per year."""
-    keys = ("since_increase", "since_from", "since_to", "since_per_year")
+    """Net change in total debt since the BASELINE_MONTH figure (end of December 2002 by
+    default, i.e. since the start of 2003), the average per year and the multiple."""
+    keys = ("since_increase", "since_from", "since_to", "since_per_year", "since_times")
     row = None
     for r in history or []:
         if str(r.get("date", ""))[:7] == BASELINE_MONTH and r.get("total") is not None:
@@ -224,6 +227,7 @@ def since_baseline(history: list[dict] | None, f: dict, now: datetime) -> dict:
         "since_from": f"KSh {start / 1e12:.2f} tn",
         "since_to": f"KSh {f['total'] / 1e12:.2f} tn",
         "since_per_year": f"KSh {inc / years / 1e12:.2f} tn" if years > 0.5 else None,
+        "since_times": f"{f['total'] / start:.0f} times" if start > 0 else None,
     }
 
 
@@ -633,7 +637,7 @@ def schedule_next(sheet: "Sheet", i: int, now: datetime) -> str:
         nxt += timedelta(days=step)
     when = nxt.astimezone(EAT).strftime("%Y-%m-%d %H:%M")
     sheet.append({"post_at": when, "text": row.get("text", ""), "visual": row.get("visual", ""),
-                  "status": "ready", "repeat": rep,
+                  "status": "ready", "repeat": rep, "tiktok": row.get("tiktok", ""),
                   "note": f"{rep.capitalize()} repeat. Set status to stop to end the series."})
     log(f"Row {i + 2}: next {rep} post added for {when}.")
     return f"Next {rep} post: {when}"
@@ -717,7 +721,7 @@ def chart_alt_text(f: dict, values: dict) -> str:
     def part(name: str, key: str, shown: str) -> str:
         share = f" ({f[key] / f['gdp'] * 100:.1f}% of GDP)" if f.get("gdp") and f.get("debt_to_gdp") else ""
         return f"{name} {shown}{share}"
-    return ("Animated line chart of Kenya's public debt since 1999, in KSh trillion: total, domestic and "
+    return ("Animated line chart of Kenya's public debt since 2003, in KSh trillion: total, domestic and "
             f"external debt drawing year by year, rising steeply over the last decade. As at {values['date']}: "
             f"{part('total', 'total', values['debt_total'])}, {part('domestic', 'domestic', values['domestic'])}, "
             f"{part('external', 'external', values['external'])}. "
@@ -735,6 +739,32 @@ def create_post(text: str, media_id: str | None = None, reply_to: str | None = N
 
 
 # ---------------------------------------------------------------- main
+TIKTOK_CAPTION = ("Kenya's public debt is growing by about KSh {growth_per_second} every second: {debt_total} "
+                  "({debt_to_gdp} of GDP). Watch it live: link in bio. #KenyaDebtCounter #KenyaDebt #Kenya #IEAKenya")
+
+
+def tiktok_step(label: str, figures: dict, values: dict, now: datetime, i: int) -> str:
+    """Send the vertical counter video to TikTok. Never raises: returns a note."""
+    try:
+        as_of = "Live estimate, " + now.astimezone(EAT).strftime("%-d %b %Y, %H:%M EAT")
+        mp4 = render_vertical(figures["total"], figures["gps"], figures["per_person"],
+                              OUT_DIR / f"row{i + 2}_tiktok.mp4", as_of=as_of, debt_to_gdp=figures.get("debt_to_gdp"))
+        caption = fill(TIKTOK_CAPTION, values)
+        summary_line(f"TikTok caption: {caption}")
+        if DRY_RUN:
+            return "TikTok: dry run, video rendered (in the run's files), not sent."
+        if not tiktok.configured():
+            return "TikTok: not set up yet (TIKTOK_CLIENT_KEY / TIKTOK_CLIENT_SECRET / TIKTOK_REFRESH_TOKEN), not sent."
+        res = tiktok.send_video(mp4, caption)
+        if res["mode"] == "inbox":
+            return (f"TikTok: sent to the IEA Kenya TikTok inbox ({res['status']}). Open TikTok, tap the notification, "
+                    f"paste the caption and Post. Caption: {caption}")
+        return f"TikTok: posted ({res['status']}) {res['url'] or ''}".strip()
+    except Exception as e:  # TikTok never stops the X post or the series
+        log(f"{label}: TikTok failed - {e}")
+        return f"TikTok failed: {str(e)[:250]}"
+
+
 def main() -> int:
     now = datetime.now(timezone.utc)
     if not os.getenv("LOCAL_CSV") and not os.getenv("X_POSTS_SHEET_ID"):
@@ -911,7 +941,13 @@ def main() -> int:
                 summary_line(f"Reply (with the debt-trend chart): {reply}")
             if alt:
                 log(f"{label}: video alt text: {alt!r}")
+            want_tiktok = (row.get("tiktok") or "").strip().lower() in ("yes", "y", "true", "1")
+            if want_tiktok and style != "counter":
+                want_tiktok = False
+                log(f"{label}: tiktok=yes ignored; only the counter video has a TikTok version.")
             if DRY_RUN:
+                if want_tiktok:
+                    log(f"{label}: {tiktok_step(label, figures, values, now, i)}")
                 log(f"{label}: dry run, not posted.")
                 continue
             sheet.update(i, status="posting", note="Posting...")
@@ -938,6 +974,9 @@ def main() -> int:
                 except Exception as e:  # the main post is out; never repost it
                     notes.append(f"Posted, but the chart reply failed: {str(e)[:300]}")
                     log(f"{label}: {notes[-1]}")
+            if want_tiktok:
+                notes.append(tiktok_step(label, figures, values, now, i))
+                summary_line(notes[-1])
             nxt = schedule_next(sheet, i, now)
             if nxt:
                 notes.append(nxt)

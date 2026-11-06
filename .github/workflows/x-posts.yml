@@ -16,6 +16,8 @@ name: X posts (IEA Kenya account)
 # X_ACCESS_TOKEN_SECRET (IEA Kenya's X developer app, "Read and write"),
 # GSHEET_SERVICE_ACCOUNT, SUPABASE_URL and SUPABASE_SERVICE_ROLE (fallback).
 # Optional repository variable X_POSTS_SHEET_ID to use a different sheet.
+# Optional TikTok: secrets TIKTOK_CLIENT_KEY, TIKTOK_CLIENT_SECRET, TIKTOK_REFRESH_TOKEN;
+# variable TIKTOK_MODE = inbox (default) or direct.
 on:
   # Twice an hour so that a run GitHub delays or drops is picked up by the next
   # one; a post due at 9:00 goes out at about 9:07, or 9:37 at the latest.
@@ -80,6 +82,11 @@ jobs:
           GSHEET_SERVICE_ACCOUNT_FILE: gsheets.json
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          # TikTok (optional; rows with tiktok = yes). See x-posts/README.md.
+          TIKTOK_CLIENT_KEY: ${{ secrets.TIKTOK_CLIENT_KEY }}
+          TIKTOK_CLIENT_SECRET: ${{ secrets.TIKTOK_CLIENT_SECRET }}
+          TIKTOK_REFRESH_TOKEN: ${{ secrets.TIKTOK_REFRESH_TOKEN }}
+          TIKTOK_MODE: ${{ vars.TIKTOK_MODE || 'inbox' }}
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
           ONLY_ROW: ${{ inputs.only_row }}
           OUT_DIR: out

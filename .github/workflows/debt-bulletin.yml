@@ -73,7 +73,8 @@ jobs:
             echo "**What to do (about 5 minutes):**"
             echo "1. Open the bulletin. In the **Government Domestic Debt** table (Table 7 in recent bulletins) take the right-most gross domestic debt figure and its date. In the **Public Debt** table (Table 10) take the last row's external debt in **US\$ billion** and its month. CBK sometimes renumbers the tables, so go by their titles."
             echo "2. Add a new row at the bottom of the [debt_bulletin tab]($sheet): bulletin_date | domestic_bn | domestic_as_at | external_usd_bn | external_month | note (plain numbers, dates as YYYY-MM-DD)."
-            echo "3. Update the counter now: [Run workflow]($run_url) (or wait for the next run at 08:53, 13:53 or 18:53)."
+            echo "3. If the **Public Debt** table shows a month that is new or changed (a revision), add or update it in the [debt_bulletin_monthly tab]($sheet): month (YYYY-MM) | domestic_bn | external_usd_bn | external_bn | total_bn | bulletin_date | note. These official figures replace the monthly file's for those months; for a revised month, add a new row with the newer bulletin_date (the newest wins)."
+            echo "4. Update the counter now: [Run workflow]($run_url) (or wait for the next run at 08:53, 13:53 or 18:53)."
             echo
             echo "Close this issue once the row is in."
           } > body.md

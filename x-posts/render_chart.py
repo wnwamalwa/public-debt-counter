@@ -1,11 +1,11 @@
 """
 Render the "Trends in Kenya's public debt" chart posted under each video:
-total, domestic and external debt since 1999 (KSh trillion), with the latest
+total, domestic and external debt since 2003 (KSh trillion; X_POSTS_CHART_START), with the latest
 point set to the live figures and an "As at ..." callout, in the style of
 Figure 1 of the IEA Kenya quarterly macro & debt report.
 
 render_chart()        a still PNG (the finished chart)
-render_chart_video()  an MP4 in which the three lines draw themselves from 1999
+render_chart_video()  an MP4 in which the three lines draw themselves from 2003
                       up to today, then the "As at" callout and the % of GDP
                       labels appear and the finished chart holds; also saves
                       the last frame as a PNG
@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import tempfile
@@ -31,6 +32,8 @@ from matplotlib import font_manager  # noqa: E402
 from PIL import Image  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
+# First month shown: the row for Dec 2002 is the stock at the end of 2002, i.e. the start of 2003.
+CHART_START = os.getenv("X_POSTS_CHART_START", "2002-12-01")
 
 # Same series colours as the quarterly report (iea_blue / iea_green / iea_gold)
 SERIES = [("total", "Total", "#1565C0"), ("domestic", "Domestic", "#2E7D32"), ("external", "External", "#C8A415")]
@@ -60,6 +63,7 @@ def _rows(history: list[dict], live: dict | None) -> list[dict]:
     rows = sorted(({"date": str(r["date"])[:10], **{k: float(r[k]) for k, _, _ in SERIES}}
                    for r in history if all(r.get(k) is not None for k, _, _ in SERIES)),
                   key=lambda r: r["date"])
+    rows = [r for r in rows if r["date"] >= CHART_START]
     if live:
         rows = [r for r in rows if r["date"] < live["date"]] + [live]
     if len(rows) < 12:
@@ -81,7 +85,7 @@ class _Chart:
         fig = self.fig = plt.figure(figsize=(8, 4.5), dpi=150)  # 1200 x 675 px, 16:9
         fig.patch.set_facecolor("white")
         fig.add_artist(plt.Rectangle((0, 0.985), 1, 0.015, transform=fig.transFigure, color=IEA_GREEN, zorder=5))
-        fig.text(0.035, 0.925, "Trends in Kenya's public debt (KSh trillion)", fontsize=15,
+        fig.text(0.035, 0.925, "Kenya's public debt since 2003 (KSh trillion)", fontsize=15,
                  fontweight="bold", color=DARK, va="center")
         logo_path = HERE / "assets" / "iea-kenya.png"
         if logo_path.exists():
@@ -187,7 +191,7 @@ def render_chart(history: list[dict], live: dict | None, out_png: Path, gdp: flo
 
 def render_chart_video(history: list[dict], live: dict | None, out_mp4: Path, gdp: float | None = None,
                        draw_seconds: float = 6.0, hold_seconds: float = 5.0) -> tuple[Path, Path]:
-    """MP4 of the lines drawing from 1999 to today, then the finished chart.
+    """MP4 of the lines drawing from 2003 to today, then the finished chart.
     Returns (mp4, png of the final frame)."""
     from render_video import ffmpeg_exe
     rows = _rows(history, live)
