@@ -68,6 +68,16 @@ STALE_DAYS <- 28          # newest domestic figure older than this: leave the co
 MAX_WEEKLY_CHANGE <- 0.05 # domestic may not move more than 5% from the previous row
 MAX_USD_CHANGE    <- 0.10 # external US$ may not move more than 10% from the previous row
 TREND_MONTHS      <- 12
+# Conservative cap: the counter never grows faster than the Budget's planned
+# net borrowing for the current fiscal year (domestic and external separately).
+# Budget Statement FY 2026/27 (June 2026): deficit KSh 1,146.2 bn, financed by
+# net domestic borrowing KSh 1,030 bn and net external financing KSh 116.2 bn.
+# Update each June (or after a Supplementary Budget), or set
+# BUDGET_NET_DOM_BN / BUDGET_NET_EXT_BN; CONSERVATIVE=false switches it off.
+CONSERVATIVE      <- !tolower(Sys.getenv("CONSERVATIVE", "true")) %in% c("false", "0", "no", "off")
+BUDGET_FY         <- Sys.getenv("BUDGET_FY", "FY 2026/27")
+BUDGET_NET_DOM_BN <- as.numeric(Sys.getenv("BUDGET_NET_DOM_BN", "1030"))
+BUDGET_NET_EXT_BN <- as.numeric(Sys.getenv("BUDGET_NET_EXT_BN", "116.2"))
 # Currency composition of external debt (share of the US$ total). Source:
 # National Treasury, Public Debt Bulletin, December 2025, section 3.1
 # (USD 53.0%, EUR 27.3%, CNY 12.2%, JPY 4.9%, GBP 2.5%, others 0.2% counted
@@ -390,6 +400,20 @@ if (!is.null(def)) {
   log_msg("No deficit figures; growth from the observed trend only.")
 }
 
+# Conservative cap (see BUDGET_NET_*_BN above): each part grows at the lower of
+# its observed pace and the Budget's planned net borrowing.
+cap_note <- "off"
+if (CONSERVATIVE && isTRUE(BUDGET_NET_DOM_BN > 0 && BUDGET_NET_EXT_BN >= 0)) {
+  cap_dom <- BUDGET_NET_DOM_BN * 1e9 / (365.25 * 86400)
+  cap_ext <- BUDGET_NET_EXT_BN * 1e9 / (365.25 * 86400)
+  was <- c(gps_dom, gps_ext)
+  gps_dom <- min(gps_dom, cap_dom)
+  gps_ext <- min(gps_ext, cap_ext)
+  cap_note <- sprintf("%s Budget net borrowing: domestic KSh %s/sec (trend %s), external KSh %s/sec (trend %s)",
+                      BUDGET_FY, format(round(cap_dom), big.mark = ","), format(round(was[1]), big.mark = ","),
+                      format(round(cap_ext), big.mark = ","), format(round(was[2]), big.mark = ","))
+}
+
 # ------------------------------------------------------------
 # 4. THE DEBT RIGHT NOW
 # ------------------------------------------------------------
@@ -410,7 +434,8 @@ if (isTRUE(abs(debt_ttl / last_actual_ttl - 1) > 0.15))
 
 stamp <- sub("(\\d{2})(\\d{2})$", "\\1:\\2", format(now_time, "%Y-%m-%dT%H:%M:%S%z"))
 signature <- paste(latest$bulletin_date, latest$domestic, latest$domestic_as_at, latest$external_usd,
-                   latest$external_month, fx$value, fx$date, round(xfx$factor, 4), sep = "|")
+                   latest$external_month, fx$value, fx$date, round(xfx$factor, 4),
+                   if (CONSERVATIVE) paste0("cap", BUDGET_NET_DOM_BN, "/", BUDGET_NET_EXT_BN) else "nocap", sep = "|")
 unchanged <- file.exists(STATE_FILE) && identical(readLines(STATE_FILE, warn = FALSE)[1], signature)
 
 cat("\n============ WEEKLY BULLETIN NOWCAST ============\n")
@@ -423,6 +448,7 @@ cat("Total now         :", bn(debt_ttl), "bn  (last CBK monthly:", bn(last_actua
 cat("Growth per second : KSh", round(gps_ttl), "(domestic", round(gps_dom), "; external", round(gps_ext), ")\n")
 cat("Growth basis      :", growth_basis, "| domestic trend from", dom_basis, "\n")
 cat("Cross-currency    :", xfx$note, "| external growth:", ext_basis, "\n")
+cat("Conservative cap  :", cap_note, "\n")
 cat("=================================================\n")
 
 # ------------------------------------------------------------
