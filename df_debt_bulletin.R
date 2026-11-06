@@ -6,8 +6,9 @@
 #   1. Reads the "debt_bulletin" tab of the IEA Kenya Google Sheet, where the
 #      figures from each CBK Weekly Bulletin are entered by hand:
 #        bulletin_date | domestic_bn | domestic_as_at | external_usd_bn | external_month | note
-#      (Table 8 "Government Domestic Debt": the latest gross domestic debt and
-#       its date; Table 11 "Public Debt": the latest external debt in US$.)
+#      ("Government Domestic Debt", Table 7 in recent bulletins: the latest gross
+#       domestic debt and its date; "Public Debt", Table 10: the latest external
+#       debt in US$. CBK sometimes renumbers the tables.)
 #   2. Checks the latest row (dates, plausible values, not a jump from the
 #      previous row) so a typo never reaches the counter.
 #   3. Works out the debt right now:

@@ -71,7 +71,7 @@ jobs:
               echo "**Public Debt file (monthly):** $CSV_URL (latest year,month: $CSV_LATEST)"; echo
             fi
             echo "**What to do (about 5 minutes):**"
-            echo "1. Open the bulletin. In **Table 8 (Government Domestic Debt)** take the right-most gross domestic debt figure and its date. In **Table 11 (Public Debt)** take the last row's external debt in **US\$ billion** and its month."
+            echo "1. Open the bulletin. In the **Government Domestic Debt** table (Table 7 in recent bulletins) take the right-most gross domestic debt figure and its date. In the **Public Debt** table (Table 10) take the last row's external debt in **US\$ billion** and its month. CBK sometimes renumbers the tables, so go by their titles."
             echo "2. Add a new row at the bottom of the [debt_bulletin tab]($sheet): bulletin_date | domestic_bn | domestic_as_at | external_usd_bn | external_month | note (plain numbers, dates as YYYY-MM-DD)."
             echo "3. Update the counter now: [Run workflow]($run_url) (or wait for the next run at 08:53, 13:53 or 18:53)."
             echo
