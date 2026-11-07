@@ -13,9 +13,15 @@
 #      previous row) so a typo never reaches the counter.
 #   3. Works out the debt right now:
 #        domestic = latest weekly figure + domestic growth × time since its date
-#        external = US$ figure × cross-currency factor × TODAY's CBK KSh/US$
-#                   rate (read from the CBK home page on every run; df_forex
-#                   as a fallback) + external growth × time since its month
+#        external = US$ figure × cross-currency factor × CBK's official
+#                   end-of-month KSh/US$ rate for the latest completed month
+#                   (df_forex; FX_MODE=daily uses today's rate from the CBK
+#                   home page instead) + external growth × time since its month
+#      OFFICIAL-RELEASE MODE: the counter's level is only reset when an
+#      official input changes (a new bulletin row, a new or revised month in
+#      debt_bulletin_monthly, CBK's new monthly exchange rate, the Budget cap).
+#      Otherwise the run writes nothing and the counter carries on along its
+#      path. A reset can move it up or down; the counter shows the change.
 #      The cross-currency factor revalues the euro, yuan, yen and sterling
 #      parts of the external debt (Treasury's currency shares) from the end
 #      of the bulletin's month to today (ECB reference rates, Frankfurter API).
@@ -252,10 +258,30 @@ cbk_daily_rate <- function() {
     list(value = v, date = d, source = "CBK home page (daily indicative rate)")
   }, error = function(e) { log_msg("Could not read today's CBK rate (", conditionMessage(e), "); using df_forex."); NULL })
 }
+# OFFICIAL-RELEASE MODE (FX_MODE = monthly, the default): the counter only
+# steps when official data change, so the exchange rate is CBK's official
+# end-of-month KSh/US$ rate for the latest completed month (df_forex, source
+# Actual), not the daily rate. Within a month the rate, and therefore the
+# counter's path, stay the same; on the first run after CBK publishes a new
+# month the counter steps to it. FX_MODE=daily restores the daily rate.
+FX_MODE <- tolower(Sys.getenv("FX_MODE", "monthly"))
+cbk_monthly_rate <- function() {
+  tryCatch({
+    r <- if (nzchar(Sys.getenv("FOREX_CSV"))) read.csv(Sys.getenv("FOREX_CSV")) else
+      sb_get("df_forex", list(select = "date,value,source", order = "date.desc", limit = 60))
+    if (!"source" %in% names(r)) r$source <- "Actual"
+    r <- r %>% mutate(date = as_date(substr(date, 1, 10)), value = as.numeric(value)) %>%
+      filter(tolower(source) == "actual", day(date) == 1, date < floor_date(today, "month"),
+             value > 50, value < 500) %>% arrange(desc(date))
+    if (!nrow(r)) stop("no official monthly rate")
+    list(value = r$value[1], date = (r$date[1] %m+% months(1)) - 1,
+         source = sprintf("CBK end-of-month rate, %s (official)", format(r$date[1], "%b %Y")))
+  }, error = function(e) { log_msg("No official monthly rate (", conditionMessage(e), "); using the daily rate."); NULL })
+}
 fx <- if (nzchar(Sys.getenv("FX_VALUE"))) {
   list(value = as.numeric(Sys.getenv("FX_VALUE")), date = today, source = "FX_VALUE (test)")
 } else {
-  cbk_daily_rate() %||% {
+  (if (FX_MODE == "monthly") cbk_monthly_rate()) %||% cbk_daily_rate() %||% {
     r <- sb_get("df_forex", list(select = "date,value,source", date = paste0("lte.", today),
                                  order = "date.desc", limit = 5))
     if (!length(r) || !nrow(r)) fail("No exchange rate from CBK or df_forex.")
@@ -263,7 +289,7 @@ fx <- if (nzchar(Sys.getenv("FX_VALUE"))) {
   }
 }
 if (!isTRUE(fx$value > 50 && fx$value < 500)) fail("Implausible KSh/US$ rate ", fx$value, " in df_forex.")
-if (as.numeric(today - fx$date) > 14) warning("Exchange rate is from ", fx$date, " (more than two weeks old).", call. = FALSE)
+if (as.numeric(today - fx$date) > 45) warning("Exchange rate is from ", fx$date, " (more than two weeks old).", call. = FALSE)
 
 # Cross-currency factor: the bulletin gives external debt in US$ at the end
 # of its month. Since then the euro, yuan, yen and sterling have moved
@@ -297,8 +323,11 @@ cross_fx <- function() {
   month_end <- (latest$external_month %m+% months(1)) - 1
   then <- if (nzchar(Sys.getenv("CROSS_FX_THEN"))) list(rates = parse_rates(Sys.getenv("CROSS_FX_THEN")), date = month_end) else
     frankfurter(format(month_end))
-  now_r <- if (nzchar(Sys.getenv("CROSS_FX_NOW"))) list(rates = parse_rates(Sys.getenv("CROSS_FX_NOW")), date = today) else
-    frankfurter("latest")
+  # "Now" is the same date as the KSh/US$ rate: the end of the latest completed
+  # month in official-release mode (so the factor too only changes monthly).
+  now_day <- if (FX_MODE == "monthly" && fx$date < today) fx$date else today
+  now_r <- if (nzchar(Sys.getenv("CROSS_FX_NOW"))) list(rates = parse_rates(Sys.getenv("CROSS_FX_NOW")), date = now_day) else
+    frankfurter(if (now_day < today) format(now_day) else "latest")
   if (is.null(then) || is.null(now_r)) { log_msg("Cross-currency rates unavailable; US$ figure used as is."); return(one) }
   syms <- setdiff(names(CURRENCY_SHARES), "USD")
   rel <- then$rates[syms] / now_r$rates[syms]
