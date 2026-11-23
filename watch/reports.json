@@ -38,57 +38,57 @@
     "apdr_2013_14": {
       "status": "gone",
       "url": "https://treasury.go.ke/wp-content/uploads/2021/02/Annual-Public-Debt-Report-2013-2014.pdf",
-      "checked": "2026-11-16"
+      "checked": "2026-11-23"
     },
     "dsa_2016_12": {
       "status": "ok",
       "url": "https://newsite.treasury.go.ke/sites/default/files/debt/Debt-Sustainability-Analysis-December-2016.pdf",
-      "checked": "2026-11-16"
+      "checked": "2026-11-23"
     },
     "dsa_2020_05": {
       "status": "ok",
       "url": "https://documents1.worldbank.org/curated/en/796991589998832687/txt/Kenya-Joint-World-Bank-IMF-Debt-Sustainability-Analysis.txt",
-      "checked": "2026-11-16"
+      "checked": "2026-11-23"
     },
     "dsa_2021_04": {
       "status": "ok",
       "url": "https://documents1.worldbank.org/curated/en/238771622150014771/txt/Kenya-Joint-World-Bank-IMF-Debt-Sustainability-Analysis.txt",
-      "checked": "2026-11-16"
+      "checked": "2026-11-23"
     },
     "dsa_2021_03_treasury": {
       "status": "gone",
       "url": "https://treasury.go.ke/wp-content/uploads/2023/06/Debt-Sustainability-Analysis-March-2021.pdf",
-      "checked": "2026-11-16"
+      "checked": "2026-11-23"
     },
     "dsa_2024_10_treasury": {
       "status": "gone",
       "url": "https://www.treasury.go.ke/wp-content/uploads/2025/12/Debt-Sustainability-Analysis-October-2024.pdf",
-      "checked": "2026-11-16"
+      "checked": "2026-11-23"
     },
     "apdr_2020_21": {
       "status": "gone",
       "url": "https://www.treasury.go.ke/sites/default/files/Annual-Public-Debt-Report-2020-2021.pdf",
-      "checked": "2026-11-16"
+      "checked": "2026-11-23"
     },
     "apdr_2024_25": {
       "status": "ok",
       "url": "https://www.treasury.go.ke/sites/default/files/Annual-Public-Debt-Report-2024-2025.pdf",
-      "checked": "2026-11-16"
+      "checked": "2026-11-23"
     },
     "apdr_2025_26": {
       "status": "gone",
       "url": "https://www.treasury.go.ke/sites/default/files/Annual-Public-Debt-Report-2025-2026.pdf",
-      "checked": "2026-11-16"
+      "checked": "2026-11-23"
     },
     "pfm_2019_ceiling": {
       "status": "ok",
       "url": "https://www.businessdailyafrica.com/bd/news/treasury-law-change-ups-public-debt-cap-to-sh9trn-2266074",
-      "checked": "2026-11-16"
+      "checked": "2026-11-23"
     },
     "pfm_2023_anchor": {
       "status": "unverified",
       "url": "https://nation.africa/kenya/business/fresh-loans-push-kenya-s-public-debt-stock-to-sh12-82trn-5543624",
-      "checked": "2026-11-16"
+      "checked": "2026-11-23"
     }
   },
   "wb_dsa": [
